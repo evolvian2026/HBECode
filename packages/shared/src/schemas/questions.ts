@@ -41,6 +41,7 @@ export type LanguageTemplate = z.infer<typeof LanguageTemplate>;
 
 /** Draft-tolerant shape: publish-time rules are checked by `publishProblems`. */
 export const CodingQuestionInput = z.object({
+  type: z.literal('coding').default('coding'),
   title: z.string().trim().min(3).max(200),
   statement: z.string().max(20000),
   constraints: z.string().max(5000).default(''),

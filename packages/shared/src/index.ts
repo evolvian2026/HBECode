@@ -7,3 +7,8 @@ export * from './schemas/auth.js';
 export * from './schemas/users.js';
 export * from './schemas/questions.js';
 export * from './schemas/submissions.js';
+export * from './schemas/web.js';
+export * from './schemas/db.js';
+export * from './result-compare.js';
+export * from './mongo-guard.js';
+export * from './schemas/question-input.js';

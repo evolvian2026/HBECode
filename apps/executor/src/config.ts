@@ -14,6 +14,12 @@ export interface ExecutorConfig {
   workRoot: string;
   cgroupV2: boolean;
   cgroupRoot: string;
+  /** Headless Chromium for web grading (run inside nsjail). */
+  chromiumPath: string;
+  /** Admin connections to the isolated DB runner servers (absent = dialect not offered). */
+  pgRunnerUrl?: string;
+  mysqlRunnerUrl?: string;
+  mongoRunnerUrl?: string;
 }
 
 export function loadConfig(env: NodeJS.ProcessEnv = process.env): ExecutorConfig {
@@ -31,5 +37,9 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): ExecutorConfig
     workRoot: env.WORK_ROOT ?? '/var/lib/hbe-exec',
     cgroupV2: env.CGROUP_V2 ? env.CGROUP_V2 === '1' : existsSync(`${cgroupRoot}/cgroup.controllers`),
     cgroupRoot,
+    chromiumPath: env.CHROMIUM_PATH ?? '/opt/chromium/chrome-linux/headless_shell',
+    pgRunnerUrl: env.PG_RUNNER_URL || undefined,
+    mysqlRunnerUrl: env.MYSQL_RUNNER_URL || undefined,
+    mongoRunnerUrl: env.MONGO_RUNNER_URL || undefined,
   };
 }

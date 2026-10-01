@@ -1,6 +1,7 @@
 import { Inject, Injectable, Logger, type OnModuleDestroy, type OnModuleInit } from '@nestjs/common';
 import { languageSecrets, questionVersions, submissionResults, submissions, testCases, users } from '@hbe/db';
-import { RUNTIMES, type ExecJob, type ExecResult, type RuntimeId, type Verdict } from '@hbe/shared';
+import { CheckSpec, DbCompare, setupFor, stateQueryFor, WebFiles, type Capability, type DbDialect, type ExecJob, type ExecResult, type RuntimeId, type Verdict } from '@hbe/shared';
+import { dbSpec, expectedOf, limitFor, questionType, webCheckOf, webSpec } from '../questions/question-types.js';
 import { and, asc, eq, inArray, lt, sql } from 'drizzle-orm';
 import { Redis } from 'ioredis';
 import { CONFIG, type AppConfig } from '../config.js';
@@ -80,7 +81,7 @@ export class DispatchService implements OnModuleInit, OnModuleDestroy {
   }
 
   /** Long-poll: wait up to CLAIM_WAIT_SEC for a submission and lease it to this executor. */
-  async claim(executorId: string, runtimes: RuntimeId[]): Promise<ExecJob | null> {
+  async claim(executorId: string, runtimes: Capability[]): Promise<ExecJob | null> {
     const deadline = Date.now() + CLAIM_WAIT_SEC * 1000;
     const conn = this.acquire();
     try {
@@ -104,44 +105,65 @@ export class DispatchService implements OnModuleInit, OnModuleDestroy {
     }
   }
 
-  private async lease(id: string, executorId: string, runtimes: RuntimeId[]): Promise<ExecJob | null | 'unsupported'> {
+  private async lease(id: string, executorId: string, capabilities: Capability[]): Promise<ExecJob | null | 'unsupported'> {
     const job = await this.db.system(async (tx) => {
       const [s] = await tx.select().from(submissions).where(eq(submissions.id, id)).for('update', { skipLocked: true });
       if (!s || s.status !== 'queued') return null; // duplicate id or already handled
-      if (!runtimes.includes(s.runtime as RuntimeId)) return 'unsupported' as const;
       const [v] = await tx.select().from(questionVersions).where(eq(questionVersions.id, s.versionId));
       const [secret] = await tx.select().from(languageSecrets).where(and(eq(languageSecrets.versionId, s.versionId), eq(languageSecrets.runtime, s.runtime)));
-      if (!v || !secret) {
+      const fail = async () => {
         await tx.update(submissions).set({ status: 'failed', verdict: 'IE', finishedAt: new Date() }).where(eq(submissions.id, id));
         return null;
-      }
+      };
+      if (!v || !secret) return fail();
+      const type = questionType(v);
+      const capability = (type === 'web' ? `web:${s.runtime}` : type === 'db' ? `db:${s.runtime}` : s.runtime) as Capability;
+      if (!capabilities.includes(capability)) return 'unsupported' as const;
+
       const all = await tx.select().from(testCases).where(eq(testCases.versionId, s.versionId)).orderBy(asc(testCases.visibility), asc(testCases.ordinal));
       const samples = all.filter((t) => t.visibility === 'sample');
       const hidden = all.filter((t) => t.visibility === 'hidden');
-      let tests: ExecJob['tests'];
-      if (s.kind === 'run') {
-        tests =
-          s.customInput !== null
-            ? [{ id: 'custom', ordinal: 1, hidden: false, input: s.customInput }]
-            : samples.map((t, i) => ({ id: t.id, ordinal: i + 1, hidden: false, input: t.input, expected: t.expected }));
+      // Samples first, then hidden tests ('hidden' sorts before 'sample', so order explicitly).
+      const chosen = s.kind === 'run' ? samples : [...samples, ...hidden];
+      let out: ExecJob;
+      if (type === 'web') {
+        const files = WebFiles.safeParse(safeJson(s.code));
+        if (!files.success) return fail();
+        out = {
+          type: 'web', jobId: s.id, kind: s.kind, framework: webSpec(v).framework, files: files.data, checkTimeoutMs: v.baseTimeLimitMs,
+          checks: chosen.map((t, i) => {
+            const c = webCheckOf(t);
+            return { id: t.id, ordinal: i + 1, hidden: t.visibility === 'hidden', title: c.title, viewport: c.viewport ?? undefined, spec: CheckSpec.parse(c.check) };
+          }),
+        };
+      } else if (type === 'db') {
+        const spec = dbSpec(v);
+        const dialect = s.runtime as DbDialect;
+        const stateQuery = spec.mode === 'dml' ? stateQueryFor({ stateQuery: spec.stateQuery ?? undefined }, dialect) : undefined;
+        out = {
+          type: 'db', jobId: s.id, kind: s.kind, dialect, mode: spec.mode, code: s.code, timeLimitMs: v.baseTimeLimitMs, compare: DbCompare.parse(spec.compare ?? {}),
+          datasets: chosen.map((t, i) => {
+            const setup = setupFor((t.spec as { setup: Parameters<typeof setupFor>[0] }).setup, dialect) ?? '';
+            // Validation runs have no expected result: the reference output becomes it.
+            const expected = s.kind === 'validate' ? undefined : expectedOf(t)[dialect];
+            return { id: t.id, ordinal: i + 1, hidden: t.visibility === 'hidden', setup, stateQuery, expected };
+          }),
+        };
+        if (s.kind !== 'validate' && out.datasets.some((d) => !d.expected)) return fail(); // never validated for this dialect
       } else {
-        tests = [...samples, ...hidden].map((t, i) => ({ id: t.id, ordinal: i + 1, hidden: t.visibility === 'hidden', input: t.input, expected: t.expected }));
+        let tests: Extract<ExecJob, { type: 'coding' }>['tests'];
+        if (s.kind === 'run' && s.customInput !== null) tests = [{ id: 'custom', ordinal: 1, hidden: false, input: s.customInput }];
+        else tests = chosen.map((t, i) => ({ id: t.id, ordinal: i + 1, hidden: t.visibility === 'hidden', input: t.input, expected: t.expected }));
+        out = {
+          type: 'coding', jobId: s.id, kind: s.kind, runtime: s.runtime as RuntimeId, studentCode: s.code, driverCode: secret.driver, tests,
+          limits: { cpuMs: limitFor(v, s.runtime), memMb: v.memoryLimitMb, outputBytes: OUTPUT_LIMIT }, compare: v.compare, stopOnFirstFailure: false,
+        };
       }
+      const total = out.type === 'web' ? out.checks.length : out.type === 'db' ? out.datasets.length : out.tests.length;
       await tx
         .update(submissions)
-        .set({ status: 'running', executorId, leaseUntil: new Date(Date.now() + LEASE_MS), startedAt: new Date(), dispatchCount: sql`${submissions.dispatchCount} + 1`, total: tests.length })
+        .set({ status: 'running', executorId, leaseUntil: new Date(Date.now() + LEASE_MS), startedAt: new Date(), dispatchCount: sql`${submissions.dispatchCount} + 1`, total })
         .where(eq(submissions.id, id));
-      const out: ExecJob = {
-        jobId: s.id,
-        kind: s.kind,
-        runtime: s.runtime as RuntimeId,
-        studentCode: s.code,
-        driverCode: secret.driver,
-        tests,
-        limits: { cpuMs: Math.round(v.baseTimeLimitMs * RUNTIMES[s.runtime as RuntimeId].timeMultiplier), memMb: v.memoryLimitMb, outputBytes: OUTPUT_LIMIT },
-        compare: v.compare,
-        stopOnFirstFailure: false,
-      };
       return out;
     });
     if (job && job !== 'unsupported') await this.notify(id, 'running');
@@ -179,8 +201,9 @@ export class DispatchService implements OnModuleInit, OnModuleDestroy {
             return {
               submissionId: s.id, tenantId: s.tenantId, ordinal: i + 1, testCaseId: tc?.id ?? null, hidden, verdict: t.verdict,
               cpuMs: t.cpuMs, wallMs: t.wallMs, memKb: t.memKb,
-              // Output of hidden tests is never stored.
+              // Output, explanations and result tables of hidden tests are never stored.
               stdout: hidden ? null : t.stdout, stderr: hidden ? null : t.stderr,
+              detail: hidden ? null : (t.detail ?? null), result: hidden ? null : (t.result ?? null),
             };
           }),
         );
@@ -258,5 +281,13 @@ export class DispatchService implements OnModuleInit, OnModuleDestroy {
     for (const d of r.dead) await this.notify(d, 'done');
     if (r.again.length || r.dead.length) this.log.warn(`sweeper requeued ${r.again.length}, failed ${r.dead.length}`);
     return { requeued: r.again.length, failed: r.dead.length };
+  }
+}
+
+function safeJson(s: string): unknown {
+  try {
+    return JSON.parse(s);
+  } catch {
+    return null;
   }
 }

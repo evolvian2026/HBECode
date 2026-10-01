@@ -1,5 +1,5 @@
 import { Body, Controller, Delete, Get, HttpCode, Param, ParseUUIDPipe, Post, Put, Query } from '@nestjs/common';
-import { CodingQuestionInput, DIFFICULTIES, QuestionListQuery } from '@hbe/shared';
+import { DIFFICULTIES, QuestionInput, QuestionListQuery } from '@hbe/shared';
 import { z } from 'zod';
 import { CurrentUser, Meta, RequirePermission, type AuthUser, type RequestMeta } from '../common/decorators.js';
 import { zp } from '../common/zod.pipe.js';
@@ -25,7 +25,7 @@ export class QuestionsController {
 
   @RequirePermission('question:write')
   @Post()
-  create(@CurrentUser() u: AuthUser, @Body(zp(CodingQuestionInput)) body: z.infer<typeof CodingQuestionInput>, @Meta() meta: RequestMeta) {
+  create(@CurrentUser() u: AuthUser, @Body(zp(QuestionInput)) body: z.infer<typeof QuestionInput>, @Meta() meta: RequestMeta) {
     return this.qs.create(u, body, meta);
   }
 
@@ -37,7 +37,7 @@ export class QuestionsController {
 
   @RequirePermission('question:write')
   @Put(':id')
-  update(@CurrentUser() u: AuthUser, @Param('id', ParseUUIDPipe) id: string, @Body(zp(CodingQuestionInput)) body: z.infer<typeof CodingQuestionInput>, @Meta() meta: RequestMeta) {
+  update(@CurrentUser() u: AuthUser, @Param('id', ParseUUIDPipe) id: string, @Body(zp(QuestionInput)) body: z.infer<typeof QuestionInput>, @Meta() meta: RequestMeta) {
     return this.qs.update(u, id, body, meta);
   }
 

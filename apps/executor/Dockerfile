@@ -9,6 +9,8 @@ FROM ${REGISTRY}/golang:1.24-bookworm AS go
 FROM ${REGISTRY}/rust:1.90-slim-bookworm AS rust
 FROM mcr.microsoft.com/dotnet/sdk:8.0 AS dotnet
 FROM ${REGISTRY}/node:22-bookworm-slim AS node
+# Chromium headless shell matching playwright-core 1.56.1 (multi-arch image).
+FROM mcr.microsoft.com/playwright:v1.56.1-noble AS playwright
 
 # ---- nsjail + hbe-run ----------------------------------------------------------------
 FROM ${REGISTRY}/ubuntu:24.04 AS nsjail
@@ -24,26 +26,29 @@ RUN --mount=type=secret,id=extra_ca,required=false \
 COPY apps/executor/native/hbe-run.c /src/hbe-run.c
 RUN gcc -O2 -static -Wall -Wextra -Werror -o /src/hbe-run /src/hbe-run.c && strip /src/hbe-run
 
-# ---- agent bundle --------------------------------------------------------------------
+# ---- agent (Node app + production dependencies) ---------------------------------------
 FROM node AS agent
 WORKDIR /repo
 COPY pnpm-lock.yaml pnpm-workspace.yaml package.json tsconfig.base.json ./
 COPY packages/shared/package.json packages/shared/
+COPY packages/web-runtime/package.json packages/web-runtime/
 COPY apps/executor/package.json apps/executor/
 RUN --mount=type=secret,id=extra_ca,required=false \
     if [ -s /run/secrets/extra_ca ]; then export NODE_EXTRA_CA_CERTS=/run/secrets/extra_ca; fi; \
-    corepack enable && pnpm install --frozen-lockfile --filter @hbe/executor... --ignore-scripts
+    corepack enable && pnpm install --frozen-lockfile --filter "@hbe/executor..." --ignore-scripts
 COPY packages/shared packages/shared
+COPY packages/web-runtime packages/web-runtime
 COPY apps/executor apps/executor
-RUN corepack enable && pnpm --filter @hbe/shared build \
- && cd apps/executor && pnpm exec esbuild src/main.ts src/cli-run.ts src/cli-versions.ts --bundle --platform=node --format=esm \
-      --target=node22 --outdir=/out --out-extension:.js=.mjs
+RUN --mount=type=secret,id=extra_ca,required=false \
+    if [ -s /run/secrets/extra_ca ]; then export NODE_EXTRA_CA_CERTS=/run/secrets/extra_ca; fi; \
+    corepack enable && pnpm --filter "@hbe/executor..." build \
+ && pnpm --filter @hbe/executor deploy --legacy --prod /out
 
 # ---- runtime -------------------------------------------------------------------------
 FROM ${REGISTRY}/ubuntu:24.04
 ENV DEBIAN_FRONTEND=noninteractive
 RUN apt-get update && apt-get install -y --no-install-recommends \
-      gcc g++ libc6-dev openjdk-21-jdk-headless python3 \
+      gcc g++ libc6-dev openjdk-21-jdk-headless python3 python3-pandas \
       libprotobuf32t64 libnl-route-3-200 libssl3t64 zlib1g ca-certificates tini \
  && rm -rf /var/lib/apt/lists/* \
  && ln -s "$(dirname "$(dirname "$(readlink -f /usr/bin/javac)")")" /usr/lib/jvm/java-21-openjdk
@@ -70,9 +75,13 @@ COPY apps/executor/seccomp/policy.kafel /opt/hbe/policy.kafel
 COPY --chmod=0755 apps/executor/docker/csc.sh /opt/hbe/csc.sh
 COPY --chmod=0755 apps/executor/docker/entrypoint.sh /opt/hbe/entrypoint.sh
 COPY --from=agent /out /opt/hbe/agent
+COPY --from=playwright /ms-playwright/chromium_headless_shell-1194 /opt/chromium
+# System libraries Chromium needs (resolved by Playwright for this Ubuntu release).
+RUN /opt/node/bin/node /opt/hbe/agent/node_modules/playwright-core/cli.js install-deps chromium-headless-shell \
+ && rm -rf /var/lib/apt/lists/* && /opt/chromium/chrome-linux/headless_shell --version
 
 ENV NSJAIL_PATH=/usr/local/bin/nsjail HBE_RUN_PATH=/opt/hbe/hbe-run SECCOMP_POLICY=/opt/hbe/policy.kafel \
-    WORK_ROOT=/var/lib/hbe-exec NODE_ENV=production
+    WORK_ROOT=/var/lib/hbe-exec NODE_ENV=production CHROMIUM_PATH=/opt/chromium/chrome-linux/headless_shell
 HEALTHCHECK --interval=30s --timeout=5s CMD test -x /usr/local/bin/nsjail || exit 1
 # Runs as root *inside the container* because creating namespaces and cgroups requires it; every
 # submission runs as uid 65534 inside an nsjail sandbox. See docs/deployment-executor.md.

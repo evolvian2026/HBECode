@@ -9,4 +9,6 @@ for await (const c of process.stdin) chunks.push(c as Buffer);
 const cfg = loadConfig();
 await prepareCgroups(cfg);
 const job = ExecJob.parse(JSON.parse(Buffer.concat(chunks).toString('utf8')));
-process.stdout.write(JSON.stringify(await runJob(cfg, job)));
+const out = JSON.stringify(await runJob(cfg, job));
+// DB runner pools keep the event loop alive: exit once the result is flushed.
+process.stdout.write(out, () => process.exit(0));

@@ -3,7 +3,7 @@
  * Served at GET /api/v1/openapi.json and written to docs/openapi.json by `pnpm openapi`.
  */
 import {
-  AcceptInviteRequest, BatchMembersRequest, ChangePasswordRequest, CodingQuestionInput, CreateBatchRequest, CreateSubmissionRequest,
+  AcceptInviteRequest, BatchMembersRequest, ChangePasswordRequest, QuestionInput, CreateBatchRequest, CreateSubmissionRequest,
   CreateTenantRequest, CreateUserRequest, LoginRequest, MfaEnableRequest, MfaVerifyRequest, QuestionListQuery, SaveDraftRequest,
   SessionUser, SwitchTenantRequest, UpdateMembershipRequest, UpdateTenantRequest, UserListQuery,
 } from '@hbe/shared';
@@ -38,9 +38,9 @@ const ops: Op[] = [
   { method: 'post', path: '/batches/{id}/members', summary: 'Add students', tag: 'org', perm: 'batch:manage', body: BatchMembersRequest, status: 201 },
   { method: 'post', path: '/batches/{id}/members/remove', summary: 'Remove students', tag: 'org', perm: 'batch:manage', body: BatchMembersRequest, status: 200 },
   { method: 'get', path: '/questions', summary: 'Question bank (staff)', tag: 'questions', perm: 'question:read_full', query: QuestionListQuery },
-  { method: 'post', path: '/questions', summary: 'Create a coding question', tag: 'questions', perm: 'question:write', body: CodingQuestionInput, status: 201 },
+  { method: 'post', path: '/questions', summary: 'Create a question (coding, web or db)', tag: 'questions', perm: 'question:write', body: QuestionInput, status: 201 },
   { method: 'get', path: '/questions/{id}', summary: 'Authoring view (drivers/solutions for authors only)', tag: 'questions', perm: 'question:read_full' },
-  { method: 'put', path: '/questions/{id}', summary: 'Update (creates a new version if published)', tag: 'questions', perm: 'question:write', body: CodingQuestionInput },
+  { method: 'put', path: '/questions/{id}', summary: 'Update (creates a new version if published)', tag: 'questions', perm: 'question:write', body: QuestionInput },
   { method: 'delete', path: '/questions/{id}', summary: 'Delete draft / archive published', tag: 'questions', perm: 'question:write' },
   { method: 'post', path: '/questions/{id}/validate', summary: 'Run reference solutions in the sandbox', tag: 'questions', perm: 'question:write', body: z.object({ publishIfValid: z.boolean().default(false) }), status: 202 },
   { method: 'post', path: '/questions/{id}/publish', summary: 'Publish the validated latest version', tag: 'questions', perm: 'question:write', status: 200 },

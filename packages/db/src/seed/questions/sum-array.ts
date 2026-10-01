@@ -26,6 +26,7 @@ const hidden = [
 ].map((h) => ({ ...caseOf(h.values), weight: 1, isStress: h.stress }));
 
 export const sumArray: CodingQuestionInput = {
+  type: 'coding',
   title: 'Sum of an Array',
   statement:
     'Given an array of **n** integers, return the sum of all its elements.\n\nImplement the function in the starter code. It receives the array and must return the sum as a 64-bit integer.',

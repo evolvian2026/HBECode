@@ -1,4 +1,4 @@
-import { ExecJob, type ExecResult, type RuntimeId } from '@hbe/shared';
+import { ExecJob, jobCapability, type Capability, type ExecResult } from '@hbe/shared';
 import type { ExecutorConfig } from './config.js';
 import { runJob } from './runner.js';
 
@@ -14,7 +14,7 @@ export class Agent {
 
   constructor(
     private readonly cfg: ExecutorConfig,
-    private readonly runtimes: RuntimeId[],
+    private readonly runtimes: Capability[],
     private readonly versions: Record<string, string>,
     private readonly log: (msg: string, extra?: Record<string, unknown>) => void,
   ) {}
@@ -83,7 +83,7 @@ export class Agent {
         await this.report(result);
         this.log('job done', {
           jobId: job.jobId,
-          runtime: job.runtime,
+          capability: jobCapability(job),
           tests: result.tests.length,
           compileOk: result.compile.ok,
           ms: Date.now() - t0,

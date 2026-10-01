@@ -1,6 +1,7 @@
 import { Injectable } from '@nestjs/common';
-import { drafts, languageStubs, questions, submissionResults, submissions, testCases } from '@hbe/db';
-import { hasPermission, type ClientSubmission, type CreateSubmissionRequest, type Verdict } from '@hbe/shared';
+import { drafts, languageStubs, questions, questionVersions, submissionResults, submissions, testCases } from '@hbe/db';
+import { hasPermission, MAX_SOURCE_BYTES, RUNTIME_IDS, WebFiles, type ClientSubmission, type CreateSubmissionRequest, type Verdict } from '@hbe/shared';
+import { dbSpec, expectedOf, questionType, webCheckOf, webSpec } from '../questions/question-types.js';
 import { and, asc, desc, eq } from 'drizzle-orm';
 import { dbCtx, type AuthUser } from '../common/decorators.js';
 import { badRequest, notFound } from '../common/errors.js';
@@ -35,6 +36,27 @@ export class SubmissionsService {
       if (!q) throw notFound('Question');
       const versionId = q.publishedVersionId ?? (staff ? q.latestVersionId : null);
       if (!versionId) throw notFound('Question');
+      const [v] = await tx.select({ spec: questionVersions.spec }).from(questionVersions).where(eq(questionVersions.id, versionId));
+      const type = questionType(v!);
+      if (type !== 'coding' && body.customInput !== undefined) throw badRequest('Custom input is only available for coding questions.');
+      if (type === 'coding' && (!(RUNTIME_IDS as readonly string[]).includes(body.runtime) || Buffer.byteLength(body.code) > MAX_SOURCE_BYTES)) {
+        throw badRequest('Choose a programming language; code is limited to 64 KB.');
+      }
+      if (type === 'web') {
+        if (body.runtime !== webSpec(v!).framework) throw badRequest('Wrong framework for this question.');
+        let files: unknown;
+        try {
+          files = JSON.parse(body.code);
+        } catch {
+          throw badRequest('Web submissions are a JSON array of files.');
+        }
+        const r = WebFiles.safeParse(files);
+        if (!r.success) throw badRequest(`Invalid files: ${r.error.issues[0]?.message ?? 'bad format'}`);
+      }
+      if (type === 'db') {
+        if (!dbSpec(v!).dialects.includes(body.runtime as never)) throw badRequest(`${body.runtime} is not available for this question`);
+        if (Buffer.byteLength(body.code) > MAX_SOURCE_BYTES) throw badRequest('Queries are limited to 64 KB.');
+      }
       const [stub] = await tx.select().from(languageStubs).where(and(eq(languageStubs.versionId, versionId), eq(languageStubs.runtime, body.runtime)));
       if (!stub) throw badRequest(`${body.runtime} is not available for this question`);
       const priority: Priority = u.role === 'guest' ? 'practice' : body.kind;
@@ -62,10 +84,12 @@ export class SubmissionsService {
       const samples = s.kind === 'run' && s.customInput !== null
         ? []
         : await tx
-            .select({ id: testCases.id, input: testCases.input, expected: testCases.expected })
+            .select({ id: testCases.id, input: testCases.input, expected: testCases.expected, spec: testCases.spec })
             .from(testCases)
             .where(and(eq(testCases.versionId, s.versionId), eq(testCases.visibility, 'sample')));
       const sampleById = new Map(samples.map((t) => [t.id, t]));
+      const [v] = await tx.select({ spec: questionVersions.spec }).from(questionVersions).where(eq(questionVersions.id, s.versionId));
+      const type = v ? questionType(v) : 'coding';
       return {
         id: s.id,
         questionId: s.questionId,
@@ -77,16 +101,14 @@ export class SubmissionsService {
         total: s.total,
         score: s.score === null ? null : Number(s.score),
         compileOutput: s.compileOutput,
-        tests: results.map((r) =>
-          r.hidden
-            ? { ordinal: r.ordinal, hidden: true, verdict: r.verdict as Verdict }
-            : {
-                ordinal: r.ordinal, hidden: false, verdict: r.verdict as Verdict, cpuMs: r.cpuMs, memKb: r.memKb,
-                input: r.testCaseId ? sampleById.get(r.testCaseId)?.input : (s.customInput ?? undefined),
-                expected: r.testCaseId ? sampleById.get(r.testCaseId)?.expected : undefined,
-                stdout: r.stdout ?? '', stderr: r.stderr ?? '',
-              },
-        ),
+        tests: results.map((r) => {
+          if (r.hidden) return { ordinal: r.ordinal, hidden: true, verdict: r.verdict as Verdict };
+          const tc = r.testCaseId ? sampleById.get(r.testCaseId) : undefined;
+          const common = { ordinal: r.ordinal, hidden: false, verdict: r.verdict as Verdict, cpuMs: r.cpuMs, memKb: r.memKb, stdout: r.stdout ?? '', stderr: r.stderr ?? '', detail: r.detail ?? undefined };
+          if (type === 'web') return { ...common, title: tc ? webCheckOf(tc).title : undefined };
+          if (type === 'db') return { ...common, result: r.result ?? undefined, expectedResult: tc ? expectedOf(tc)[s.runtime as never] : undefined };
+          return { ...common, input: tc?.input ?? (s.customInput ?? undefined), expected: tc?.expected };
+        }),
         createdAt: s.createdAt.toISOString(),
         finishedAt: s.finishedAt?.toISOString() ?? null,
       };

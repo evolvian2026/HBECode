@@ -130,7 +130,7 @@ export interface ValidationReport {
   checkedAt: string | null;
   expected: string[];
   problems: string[];
-  /** runtime -> per-test verdict summary */
+  /** runtime / dialect / framework (+ ":starter") -> per-test verdict summary */
   runtimes: Record<string, { ok: boolean; maxCpuMs: number; limitMs: number; verdicts: string[]; compileOutput?: string }>;
 }
 
@@ -152,6 +152,8 @@ export const questionVersions = hbe.table('question_versions', {
   memoryLimitMb: integer('memory_limit_mb').notNull(),
   compare: jsonb('compare').$type<{ mode: 'exact' | 'trim_trailing' | 'unordered_lines' | 'float'; epsilon?: number }>().notNull(),
   validation: jsonb('validation').$type<ValidationReport>(),
+  /** Type-specific settings (web: framework, timeouts; db: dialects, mode, schema text, compare). */
+  spec: jsonb('spec').$type<Record<string, unknown>>().notNull().default({}),
   publishedAt: ts('published_at'),
   createdBy: uuid('created_by'),
   createdAt: ts('created_at').notNull().defaultNow(),
@@ -169,6 +171,8 @@ export const testCases = hbe.table('test_cases', {
   explanation: text('explanation').notNull().default(''),
   weight: integer('weight').notNull().default(1),
   isStress: boolean('is_stress').notNull().default(false),
+  /** Web: { title, viewport, spec }. DB: { setup }. */
+  spec: jsonb('spec').$type<Record<string, unknown>>().notNull().default({}),
 });
 
 export const languageStubs = hbe.table(
@@ -217,6 +221,7 @@ export const submissions = hbe.table('submissions', {
   leaseUntil: ts('lease_until'),
   executorId: text('executor_id'),
   validationRun: uuid('validation_run'),
+  validationRole: text('validation_role').$type<'reference' | 'starter'>(),
   createdAt: ts('created_at').notNull().defaultNow(),
   startedAt: ts('started_at'),
   finishedAt: ts('finished_at'),
@@ -236,6 +241,8 @@ export const submissionResults = hbe.table(
     memKb: integer('mem_kb').notNull(),
     stdout: text('stdout'),
     stderr: text('stderr'),
+    detail: text('detail'),
+    result: jsonb('result').$type<{ columns: string[]; rows: unknown[][]; truncated?: boolean }>(),
   },
   (t) => [primaryKey({ columns: [t.submissionId, t.ordinal] })],
 );

@@ -1,5 +1,5 @@
 import { Body, Controller, Get, HttpCode, Inject, Param, ParseUUIDPipe, Post, Put, Query, Req, Res } from '@nestjs/common';
-import { CreateSubmissionRequest, RUNTIME_IDS, SaveDraftRequest } from '@hbe/shared';
+import { CreateSubmissionRequest, DRAFT_KEYS, SaveDraftRequest } from '@hbe/shared';
 import type { FastifyReply, FastifyRequest } from 'fastify';
 import { z } from 'zod';
 import { CONFIG, type AppConfig } from '../config.js';
@@ -102,7 +102,7 @@ export class SubmissionsController {
   async saveDraft(
     @CurrentUser() u: AuthUser,
     @Param('questionId', ParseUUIDPipe) questionId: string,
-    @Param('runtime', zp(z.enum(RUNTIME_IDS))) runtime: string,
+    @Param('runtime', zp(z.enum(DRAFT_KEYS))) runtime: string,
     @Body(zp(SaveDraftRequest)) body: z.infer<typeof SaveDraftRequest>,
   ) {
     await this.subs.saveDraft(u, questionId, runtime, body.code);

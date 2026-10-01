@@ -1,4 +1,4 @@
-import type { ExecJob } from '@hbe/shared';
+import type { CodingJob as ExecJob } from '@hbe/shared';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { sumArray } from '../../../packages/db/src/seed/questions/sum-array.js';
 import { PASSWORD, seedOrg, systemQuery, type Org } from './fixtures.js';

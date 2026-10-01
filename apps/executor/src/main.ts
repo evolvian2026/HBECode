@@ -12,7 +12,7 @@ if (!cfg.token || cfg.token.length < 32) {
   process.exit(1);
 }
 await prepareCgroups(cfg);
-const { available, versions, problems } = await detectRuntimes();
+const { available, versions, problems } = await detectRuntimes(cfg);
 for (const p of problems) log('runtime unavailable', { problem: p });
 if (available.length === 0) {
   log('no runtimes available; exiting');

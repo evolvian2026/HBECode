@@ -1,6 +1,8 @@
 import { chown, mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
-import { outputsMatch, type ExecJob, type ExecResult, type ExecTestResult, type Verdict } from '@hbe/shared';
+import { outputsMatch, type CodingJob, type ExecJob, type ExecResult, type ExecTestResult, type Verdict } from '@hbe/shared';
+import { runDbJob } from './db/index.js';
+import { runWebJob } from './web/grader.js';
 import type { ExecutorConfig } from './config.js';
 import { runInJail, type JailResult } from './jail.js';
 import { RUNTIME_SPECS, type RuntimeSpec } from './runtimes.js';
@@ -40,7 +42,7 @@ export function layoutSources(spec: RuntimeSpec, studentCode: string, driverCode
   };
 }
 
-function verdictFor(job: ExecJob, spec: RuntimeSpec, r: JailResult, expected: string | undefined, cgroupMb: number): Verdict {
+function verdictFor(job: CodingJob, spec: RuntimeSpec, r: JailResult, expected: string | undefined, cgroupMb: number): Verdict {
   if (r.outputExceeded) return 'OLE';
   const s = r.stats;
   if (!s) return 'IE';
@@ -80,6 +82,16 @@ async function pool<T, R>(items: T[], n: number, fn: (t: T) => Promise<R>, stop:
 }
 
 export async function runJob(cfg: ExecutorConfig, job: ExecJob): Promise<ExecResult> {
+  try {
+    if (job.type === 'web') return await runWebJob(cfg, job);
+    if (job.type === 'db') return await runDbJob(cfg, job);
+  } catch (e) {
+    return { jobId: job.jobId, executorId: cfg.executorId, compile: { ok: false, output: '', wallMs: 0 }, tests: [], internalError: (e as Error).message };
+  }
+  return runCodingJob(cfg, job);
+}
+
+async function runCodingJob(cfg: ExecutorConfig, job: CodingJob): Promise<ExecResult> {
   const spec = RUNTIME_SPECS[job.runtime];
   await mkdir(cfg.workRoot, { recursive: true });
   const dir = await mkdtemp(join(cfg.workRoot, 'job-'));

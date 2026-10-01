@@ -61,7 +61,7 @@ describe.each(RUNTIME_IDS)('%s', (rt) => {
 });
 
 it('every pinned toolchain version matches what is installed', async () => {
-  const out = await sb.sh('/opt/node/bin/node -e "import(\'/opt/hbe/agent/cli-versions.mjs\')"');
+  const out = await sb.sh('/opt/node/bin/node -e "import(\'/opt/hbe/agent/dist/cli-versions.js\')"');
   const v = JSON.parse(out) as { available: string[]; problems: string[] };
   expect(v.problems).toEqual([]);
   expect(v.available.sort()).toEqual([...RUNTIME_IDS].sort());
