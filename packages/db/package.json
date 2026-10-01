@@ -5,12 +5,21 @@
   "type": "module",
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
-  "exports": { ".": { "types": "./dist/index.d.ts", "default": "./dist/index.js" } },
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    },
+    "./seed": {
+      "types": "./dist/seed/index.d.ts",
+      "default": "./dist/seed/index.js"
+    }
+  },
   "scripts": {
     "build": "tsc -p tsconfig.json",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "migrate": "tsx src/cli/migrate.ts",
-    "seed": "tsx src/cli/seed.ts",
+    
     "test": "vitest run"
   },
   "dependencies": {
@@ -18,5 +27,7 @@
     "drizzle-orm": "^0.45.3",
     "pg": "^8.23.1"
   },
-  "devDependencies": { "@types/pg": "^8.15.0" }
+  "devDependencies": {
+    "@types/pg": "^8.15.0"
+  }
 }

@@ -9,7 +9,11 @@ import { DispatchService, type Priority } from '../executor/dispatch.service.js'
 import { DbService } from '../infra/infra.module.js';
 
 /** Per-user limits (per minute). Guests share a stricter budget. */
-const LIMITS = { run: 30, submit: 10, guest: 10 };
+const LIMITS = {
+  run: Number(process.env.RATE_LIMIT_RUN_PER_MIN ?? 30),
+  submit: Number(process.env.RATE_LIMIT_SUBMIT_PER_MIN ?? 10),
+  guest: Number(process.env.RATE_LIMIT_GUEST_PER_MIN ?? 10),
+};
 
 @Injectable()
 export class SubmissionsService {

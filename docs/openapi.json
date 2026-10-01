@@ -1,0 +1,2482 @@
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "HBECode API",
+    "version": "0.2.0",
+    "description": "Cookie-session API. Unsafe methods require the `x-csrf-token` header (from GET /auth/csrf) and an allowed Origin. Executor endpoints (/internal/executor/*) are bearer-token only and are intentionally not documented here."
+  },
+  "servers": [
+    {
+      "url": "/"
+    }
+  ],
+  "paths": {
+    "/api/v1/auth/csrf": {
+      "get": {
+        "operationId": "getAuthCsrf",
+        "tags": [
+          "auth"
+        ],
+        "summary": "Get a CSRF token (double-submit)",
+        "security": [],
+        "responses": {
+          "200": {
+            "description": "Success"
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/auth/login": {
+      "post": {
+        "operationId": "postAuthLogin",
+        "tags": [
+          "auth"
+        ],
+        "summary": "Sign in (may return mfa_required)",
+        "security": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$schema": "https://json-schema.org/draft/2020-12/schema",
+                "type": "object",
+                "properties": {
+                  "email": {
+                    "type": "string",
+                    "maxLength": 254,
+                    "format": "email",
+                    "pattern": "^(?:[A-Za-z0-9_'+\\-]+\\.)*[A-Za-z0-9_'+\\-]*[A-Za-z0-9_+-]@(?:[A-Za-z0-9][A-Za-z0-9\\-]*\\.)+[A-Za-z]{2,}$"
+                  },
+                  "password": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 128
+                  }
+                },
+                "required": [
+                  "email",
+                  "password"
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Success"
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/auth/mfa/verify": {
+      "post": {
+        "operationId": "postAuthMfaVerify",
+        "tags": [
+          "auth"
+        ],
+        "summary": "Complete sign-in with a TOTP code",
+        "security": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$schema": "https://json-schema.org/draft/2020-12/schema",
+                "type": "object",
+                "properties": {
+                  "mfaToken": {
+                    "type": "string",
+                    "minLength": 10,
+                    "maxLength": 2000
+                  },
+                  "code": {
+                    "type": "string",
+                    "pattern": "^\\d{6}$"
+                  }
+                },
+                "required": [
+                  "mfaToken",
+                  "code"
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Success"
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/auth/refresh": {
+      "post": {
+        "operationId": "postAuthRefresh",
+        "tags": [
+          "auth"
+        ],
+        "summary": "Rotate the refresh token",
+        "security": [],
+        "responses": {
+          "200": {
+            "description": "Success"
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/auth/logout": {
+      "post": {
+        "operationId": "postAuthLogout",
+        "tags": [
+          "auth"
+        ],
+        "summary": "End the session",
+        "security": [],
+        "responses": {
+          "204": {
+            "description": "Success"
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/auth/guest": {
+      "post": {
+        "operationId": "postAuthGuest",
+        "tags": [
+          "auth"
+        ],
+        "summary": "Start a guest session (practice only)",
+        "security": [],
+        "responses": {
+          "200": {
+            "description": "Success"
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/auth/accept-invite": {
+      "post": {
+        "operationId": "postAuthAcceptInvite",
+        "tags": [
+          "auth"
+        ],
+        "summary": "Set a password from an invite/reset link",
+        "security": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$schema": "https://json-schema.org/draft/2020-12/schema",
+                "type": "object",
+                "properties": {
+                  "token": {
+                    "type": "string",
+                    "minLength": 20,
+                    "maxLength": 200
+                  },
+                  "password": {
+                    "type": "string",
+                    "minLength": 10,
+                    "maxLength": 128
+                  }
+                },
+                "required": [
+                  "token",
+                  "password"
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "204": {
+            "description": "Success"
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/auth/me": {
+      "get": {
+        "operationId": "getAuthMe",
+        "tags": [
+          "auth"
+        ],
+        "summary": "Current session user",
+        "security": [
+          {
+            "session": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success"
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/auth/switch-tenant": {
+      "post": {
+        "operationId": "postAuthSwitchTenant",
+        "tags": [
+          "auth"
+        ],
+        "summary": "Switch active institution",
+        "security": [
+          {
+            "session": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$schema": "https://json-schema.org/draft/2020-12/schema",
+                "type": "object",
+                "properties": {
+                  "tenantId": {
+                    "type": "string",
+                    "format": "uuid",
+                    "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                  }
+                },
+                "required": [
+                  "tenantId"
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Success"
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/auth/password": {
+      "post": {
+        "operationId": "postAuthPassword",
+        "tags": [
+          "auth"
+        ],
+        "summary": "Change password (ends other sessions)",
+        "security": [
+          {
+            "session": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$schema": "https://json-schema.org/draft/2020-12/schema",
+                "type": "object",
+                "properties": {
+                  "currentPassword": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 128
+                  },
+                  "newPassword": {
+                    "type": "string",
+                    "minLength": 10,
+                    "maxLength": 128
+                  }
+                },
+                "required": [
+                  "currentPassword",
+                  "newPassword"
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Success"
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/auth/mfa/setup": {
+      "post": {
+        "operationId": "postAuthMfaSetup",
+        "tags": [
+          "auth"
+        ],
+        "summary": "Start TOTP enrolment",
+        "security": [
+          {
+            "session": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success"
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/auth/mfa/enable": {
+      "post": {
+        "operationId": "postAuthMfaEnable",
+        "tags": [
+          "auth"
+        ],
+        "summary": "Confirm TOTP enrolment",
+        "security": [
+          {
+            "session": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$schema": "https://json-schema.org/draft/2020-12/schema",
+                "type": "object",
+                "properties": {
+                  "code": {
+                    "type": "string",
+                    "pattern": "^\\d{6}$"
+                  }
+                },
+                "required": [
+                  "code"
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Success"
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/tenants": {
+      "get": {
+        "operationId": "getTenants",
+        "tags": [
+          "org"
+        ],
+        "summary": "List institutions",
+        "description": "Requires permission `tenant:manage`.",
+        "security": [
+          {
+            "session": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success"
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "operationId": "postTenants",
+        "tags": [
+          "org"
+        ],
+        "summary": "Create an institution",
+        "description": "Requires permission `tenant:manage`.",
+        "security": [
+          {
+            "session": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$schema": "https://json-schema.org/draft/2020-12/schema",
+                "type": "object",
+                "properties": {
+                  "name": {
+                    "type": "string",
+                    "minLength": 2,
+                    "maxLength": 200
+                  },
+                  "slug": {
+                    "type": "string",
+                    "minLength": 2,
+                    "maxLength": 64,
+                    "pattern": "^[a-z0-9]+(?:-[a-z0-9]+)*$"
+                  }
+                },
+                "required": [
+                  "name",
+                  "slug"
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Success"
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/tenants/{id}": {
+      "patch": {
+        "operationId": "patchTenantsId",
+        "tags": [
+          "org"
+        ],
+        "summary": "Update an institution",
+        "description": "Requires permission `tenant:manage`.",
+        "security": [
+          {
+            "session": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$schema": "https://json-schema.org/draft/2020-12/schema",
+                "type": "object",
+                "properties": {
+                  "name": {
+                    "type": "string",
+                    "minLength": 2,
+                    "maxLength": 200
+                  },
+                  "status": {
+                    "type": "string",
+                    "enum": [
+                      "active",
+                      "suspended"
+                    ]
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Success"
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/users": {
+      "get": {
+        "operationId": "getUsers",
+        "tags": [
+          "org"
+        ],
+        "summary": "List members of the active institution",
+        "security": [
+          {
+            "session": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "q",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "$schema": "https://json-schema.org/draft/2020-12/schema",
+              "type": "string",
+              "maxLength": 100
+            }
+          },
+          {
+            "name": "role",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "$schema": "https://json-schema.org/draft/2020-12/schema",
+              "type": "string",
+              "enum": [
+                "client_admin",
+                "teacher",
+                "associate",
+                "student"
+              ]
+            }
+          },
+          {
+            "name": "cursor",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "$schema": "https://json-schema.org/draft/2020-12/schema",
+              "type": "string",
+              "maxLength": 200
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "$schema": "https://json-schema.org/draft/2020-12/schema",
+              "default": 25,
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 100
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success"
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "operationId": "postUsers",
+        "tags": [
+          "org"
+        ],
+        "summary": "Invite a user",
+        "description": "Requires permission `user:manage`.",
+        "security": [
+          {
+            "session": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$schema": "https://json-schema.org/draft/2020-12/schema",
+                "type": "object",
+                "properties": {
+                  "email": {
+                    "type": "string",
+                    "maxLength": 254,
+                    "format": "email",
+                    "pattern": "^(?:[A-Za-z0-9_'+\\-]+\\.)*[A-Za-z0-9_'+\\-]*[A-Za-z0-9_+-]@(?:[A-Za-z0-9][A-Za-z0-9\\-]*\\.)+[A-Za-z]{2,}$"
+                  },
+                  "name": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 200
+                  },
+                  "role": {
+                    "type": "string",
+                    "enum": [
+                      "client_admin",
+                      "teacher",
+                      "associate",
+                      "student"
+                    ]
+                  },
+                  "tenantId": {
+                    "type": "string",
+                    "format": "uuid",
+                    "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                  }
+                },
+                "required": [
+                  "email",
+                  "name",
+                  "role"
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Success"
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/users/{id}/membership": {
+      "patch": {
+        "operationId": "patchUsersIdMembership",
+        "tags": [
+          "org"
+        ],
+        "summary": "Change role or disable",
+        "description": "Requires permission `user:manage`.",
+        "security": [
+          {
+            "session": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$schema": "https://json-schema.org/draft/2020-12/schema",
+                "type": "object",
+                "properties": {
+                  "role": {
+                    "type": "string",
+                    "enum": [
+                      "client_admin",
+                      "teacher",
+                      "associate",
+                      "student"
+                    ]
+                  },
+                  "status": {
+                    "type": "string",
+                    "enum": [
+                      "active",
+                      "disabled"
+                    ]
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Success"
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/users/{id}/reset-password": {
+      "post": {
+        "operationId": "postUsersIdResetPassword",
+        "tags": [
+          "org"
+        ],
+        "summary": "Issue a password reset link",
+        "description": "Requires permission `user:manage`.",
+        "security": [
+          {
+            "session": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success"
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/batches": {
+      "get": {
+        "operationId": "getBatches",
+        "tags": [
+          "org"
+        ],
+        "summary": "List batches",
+        "security": [
+          {
+            "session": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success"
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "operationId": "postBatches",
+        "tags": [
+          "org"
+        ],
+        "summary": "Create a batch",
+        "description": "Requires permission `batch:manage`.",
+        "security": [
+          {
+            "session": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$schema": "https://json-schema.org/draft/2020-12/schema",
+                "type": "object",
+                "properties": {
+                  "name": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 200
+                  },
+                  "year": {
+                    "type": "integer",
+                    "minimum": 2000,
+                    "maximum": 2100
+                  }
+                },
+                "required": [
+                  "name"
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Success"
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/batches/{id}": {
+      "delete": {
+        "operationId": "deleteBatchesId",
+        "tags": [
+          "org"
+        ],
+        "summary": "Delete a batch",
+        "description": "Requires permission `batch:manage`.",
+        "security": [
+          {
+            "session": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Success"
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/batches/{id}/members": {
+      "get": {
+        "operationId": "getBatchesIdMembers",
+        "tags": [
+          "org"
+        ],
+        "summary": "List batch members",
+        "security": [
+          {
+            "session": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success"
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "operationId": "postBatchesIdMembers",
+        "tags": [
+          "org"
+        ],
+        "summary": "Add students",
+        "description": "Requires permission `batch:manage`.",
+        "security": [
+          {
+            "session": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$schema": "https://json-schema.org/draft/2020-12/schema",
+                "type": "object",
+                "properties": {
+                  "userIds": {
+                    "minItems": 1,
+                    "maxItems": 500,
+                    "type": "array",
+                    "items": {
+                      "type": "string",
+                      "format": "uuid",
+                      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                    }
+                  }
+                },
+                "required": [
+                  "userIds"
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Success"
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/batches/{id}/members/remove": {
+      "post": {
+        "operationId": "postBatchesIdMembersRemove",
+        "tags": [
+          "org"
+        ],
+        "summary": "Remove students",
+        "description": "Requires permission `batch:manage`.",
+        "security": [
+          {
+            "session": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$schema": "https://json-schema.org/draft/2020-12/schema",
+                "type": "object",
+                "properties": {
+                  "userIds": {
+                    "minItems": 1,
+                    "maxItems": 500,
+                    "type": "array",
+                    "items": {
+                      "type": "string",
+                      "format": "uuid",
+                      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                    }
+                  }
+                },
+                "required": [
+                  "userIds"
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Success"
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/questions": {
+      "get": {
+        "operationId": "getQuestions",
+        "tags": [
+          "questions"
+        ],
+        "summary": "Question bank (staff)",
+        "description": "Requires permission `question:read_full`.",
+        "security": [
+          {
+            "session": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "q",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "$schema": "https://json-schema.org/draft/2020-12/schema",
+              "type": "string",
+              "maxLength": 100
+            }
+          },
+          {
+            "name": "difficulty",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "$schema": "https://json-schema.org/draft/2020-12/schema",
+              "type": "string",
+              "enum": [
+                "easy",
+                "moderate",
+                "hard"
+              ]
+            }
+          },
+          {
+            "name": "status",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "$schema": "https://json-schema.org/draft/2020-12/schema",
+              "type": "string",
+              "enum": [
+                "draft",
+                "validating",
+                "invalid",
+                "published",
+                "archived"
+              ]
+            }
+          },
+          {
+            "name": "tag",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "$schema": "https://json-schema.org/draft/2020-12/schema",
+              "type": "string",
+              "maxLength": 40
+            }
+          },
+          {
+            "name": "cursor",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "$schema": "https://json-schema.org/draft/2020-12/schema",
+              "type": "string",
+              "maxLength": 200
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "$schema": "https://json-schema.org/draft/2020-12/schema",
+              "default": 25,
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 100
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success"
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "operationId": "postQuestions",
+        "tags": [
+          "questions"
+        ],
+        "summary": "Create a coding question",
+        "description": "Requires permission `question:write`.",
+        "security": [
+          {
+            "session": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$schema": "https://json-schema.org/draft/2020-12/schema",
+                "type": "object",
+                "properties": {
+                  "title": {
+                    "type": "string",
+                    "minLength": 3,
+                    "maxLength": 200
+                  },
+                  "statement": {
+                    "type": "string",
+                    "maxLength": 20000
+                  },
+                  "constraints": {
+                    "default": "",
+                    "type": "string",
+                    "maxLength": 5000
+                  },
+                  "inputFormat": {
+                    "default": "",
+                    "type": "string",
+                    "maxLength": 5000
+                  },
+                  "outputFormat": {
+                    "default": "",
+                    "type": "string",
+                    "maxLength": 5000
+                  },
+                  "difficulty": {
+                    "type": "string",
+                    "enum": [
+                      "easy",
+                      "moderate",
+                      "hard"
+                    ]
+                  },
+                  "tags": {
+                    "default": [],
+                    "maxItems": 10,
+                    "type": "array",
+                    "items": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 40
+                    }
+                  },
+                  "timeComplexity": {
+                    "default": "",
+                    "type": "string",
+                    "maxLength": 50
+                  },
+                  "spaceComplexity": {
+                    "default": "",
+                    "type": "string",
+                    "maxLength": 50
+                  },
+                  "baseTimeLimitMs": {
+                    "default": 1000,
+                    "type": "integer",
+                    "minimum": 100,
+                    "maximum": 10000
+                  },
+                  "memoryLimitMb": {
+                    "default": 256,
+                    "type": "integer",
+                    "minimum": 32,
+                    "maximum": 1024
+                  },
+                  "compare": {
+                    "default": {
+                      "mode": "trim_trailing"
+                    },
+                    "type": "object",
+                    "properties": {
+                      "mode": {
+                        "type": "string",
+                        "enum": [
+                          "exact",
+                          "trim_trailing",
+                          "unordered_lines",
+                          "float"
+                        ]
+                      },
+                      "epsilon": {
+                        "type": "number",
+                        "exclusiveMinimum": 0,
+                        "maximum": 1
+                      }
+                    },
+                    "required": [
+                      "mode"
+                    ]
+                  },
+                  "isPractice": {
+                    "default": false,
+                    "type": "boolean"
+                  },
+                  "samples": {
+                    "default": [],
+                    "maxItems": 2,
+                    "type": "array",
+                    "items": {
+                      "type": "object",
+                      "properties": {
+                        "input": {
+                          "type": "string",
+                          "maxLength": 4194304
+                        },
+                        "output": {
+                          "type": "string",
+                          "maxLength": 4194304
+                        },
+                        "explanation": {
+                          "default": "",
+                          "type": "string",
+                          "maxLength": 5000
+                        }
+                      },
+                      "required": [
+                        "input",
+                        "output"
+                      ]
+                    }
+                  },
+                  "hidden": {
+                    "default": [],
+                    "maxItems": 15,
+                    "type": "array",
+                    "items": {
+                      "type": "object",
+                      "properties": {
+                        "input": {
+                          "type": "string",
+                          "maxLength": 4194304
+                        },
+                        "output": {
+                          "type": "string",
+                          "maxLength": 4194304
+                        },
+                        "weight": {
+                          "default": 1,
+                          "type": "integer",
+                          "minimum": 1,
+                          "maximum": 100
+                        },
+                        "isStress": {
+                          "default": false,
+                          "type": "boolean"
+                        }
+                      },
+                      "required": [
+                        "input",
+                        "output"
+                      ]
+                    }
+                  },
+                  "templates": {
+                    "default": {},
+                    "type": "object",
+                    "propertyNames": {
+                      "type": "string",
+                      "enum": [
+                        "c",
+                        "cpp",
+                        "java",
+                        "python",
+                        "javascript",
+                        "go",
+                        "rust",
+                        "csharp"
+                      ]
+                    },
+                    "additionalProperties": {
+                      "type": "object",
+                      "properties": {
+                        "stub": {
+                          "type": "string",
+                          "maxLength": 65536
+                        },
+                        "driver": {
+                          "type": "string",
+                          "maxLength": 65536
+                        },
+                        "solution": {
+                          "type": "string",
+                          "maxLength": 65536
+                        }
+                      },
+                      "required": [
+                        "stub",
+                        "driver",
+                        "solution"
+                      ]
+                    }
+                  },
+                  "global": {
+                    "type": "boolean"
+                  }
+                },
+                "required": [
+                  "title",
+                  "statement",
+                  "difficulty"
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Success"
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/questions/{id}": {
+      "get": {
+        "operationId": "getQuestionsId",
+        "tags": [
+          "questions"
+        ],
+        "summary": "Authoring view (drivers/solutions for authors only)",
+        "description": "Requires permission `question:read_full`.",
+        "security": [
+          {
+            "session": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success"
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          }
+        }
+      },
+      "put": {
+        "operationId": "putQuestionsId",
+        "tags": [
+          "questions"
+        ],
+        "summary": "Update (creates a new version if published)",
+        "description": "Requires permission `question:write`.",
+        "security": [
+          {
+            "session": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$schema": "https://json-schema.org/draft/2020-12/schema",
+                "type": "object",
+                "properties": {
+                  "title": {
+                    "type": "string",
+                    "minLength": 3,
+                    "maxLength": 200
+                  },
+                  "statement": {
+                    "type": "string",
+                    "maxLength": 20000
+                  },
+                  "constraints": {
+                    "default": "",
+                    "type": "string",
+                    "maxLength": 5000
+                  },
+                  "inputFormat": {
+                    "default": "",
+                    "type": "string",
+                    "maxLength": 5000
+                  },
+                  "outputFormat": {
+                    "default": "",
+                    "type": "string",
+                    "maxLength": 5000
+                  },
+                  "difficulty": {
+                    "type": "string",
+                    "enum": [
+                      "easy",
+                      "moderate",
+                      "hard"
+                    ]
+                  },
+                  "tags": {
+                    "default": [],
+                    "maxItems": 10,
+                    "type": "array",
+                    "items": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 40
+                    }
+                  },
+                  "timeComplexity": {
+                    "default": "",
+                    "type": "string",
+                    "maxLength": 50
+                  },
+                  "spaceComplexity": {
+                    "default": "",
+                    "type": "string",
+                    "maxLength": 50
+                  },
+                  "baseTimeLimitMs": {
+                    "default": 1000,
+                    "type": "integer",
+                    "minimum": 100,
+                    "maximum": 10000
+                  },
+                  "memoryLimitMb": {
+                    "default": 256,
+                    "type": "integer",
+                    "minimum": 32,
+                    "maximum": 1024
+                  },
+                  "compare": {
+                    "default": {
+                      "mode": "trim_trailing"
+                    },
+                    "type": "object",
+                    "properties": {
+                      "mode": {
+                        "type": "string",
+                        "enum": [
+                          "exact",
+                          "trim_trailing",
+                          "unordered_lines",
+                          "float"
+                        ]
+                      },
+                      "epsilon": {
+                        "type": "number",
+                        "exclusiveMinimum": 0,
+                        "maximum": 1
+                      }
+                    },
+                    "required": [
+                      "mode"
+                    ]
+                  },
+                  "isPractice": {
+                    "default": false,
+                    "type": "boolean"
+                  },
+                  "samples": {
+                    "default": [],
+                    "maxItems": 2,
+                    "type": "array",
+                    "items": {
+                      "type": "object",
+                      "properties": {
+                        "input": {
+                          "type": "string",
+                          "maxLength": 4194304
+                        },
+                        "output": {
+                          "type": "string",
+                          "maxLength": 4194304
+                        },
+                        "explanation": {
+                          "default": "",
+                          "type": "string",
+                          "maxLength": 5000
+                        }
+                      },
+                      "required": [
+                        "input",
+                        "output"
+                      ]
+                    }
+                  },
+                  "hidden": {
+                    "default": [],
+                    "maxItems": 15,
+                    "type": "array",
+                    "items": {
+                      "type": "object",
+                      "properties": {
+                        "input": {
+                          "type": "string",
+                          "maxLength": 4194304
+                        },
+                        "output": {
+                          "type": "string",
+                          "maxLength": 4194304
+                        },
+                        "weight": {
+                          "default": 1,
+                          "type": "integer",
+                          "minimum": 1,
+                          "maximum": 100
+                        },
+                        "isStress": {
+                          "default": false,
+                          "type": "boolean"
+                        }
+                      },
+                      "required": [
+                        "input",
+                        "output"
+                      ]
+                    }
+                  },
+                  "templates": {
+                    "default": {},
+                    "type": "object",
+                    "propertyNames": {
+                      "type": "string",
+                      "enum": [
+                        "c",
+                        "cpp",
+                        "java",
+                        "python",
+                        "javascript",
+                        "go",
+                        "rust",
+                        "csharp"
+                      ]
+                    },
+                    "additionalProperties": {
+                      "type": "object",
+                      "properties": {
+                        "stub": {
+                          "type": "string",
+                          "maxLength": 65536
+                        },
+                        "driver": {
+                          "type": "string",
+                          "maxLength": 65536
+                        },
+                        "solution": {
+                          "type": "string",
+                          "maxLength": 65536
+                        }
+                      },
+                      "required": [
+                        "stub",
+                        "driver",
+                        "solution"
+                      ]
+                    }
+                  },
+                  "global": {
+                    "type": "boolean"
+                  }
+                },
+                "required": [
+                  "title",
+                  "statement",
+                  "difficulty"
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Success"
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "operationId": "deleteQuestionsId",
+        "tags": [
+          "questions"
+        ],
+        "summary": "Delete draft / archive published",
+        "description": "Requires permission `question:write`.",
+        "security": [
+          {
+            "session": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success"
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/questions/{id}/validate": {
+      "post": {
+        "operationId": "postQuestionsIdValidate",
+        "tags": [
+          "questions"
+        ],
+        "summary": "Run reference solutions in the sandbox",
+        "description": "Requires permission `question:write`.",
+        "security": [
+          {
+            "session": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$schema": "https://json-schema.org/draft/2020-12/schema",
+                "type": "object",
+                "properties": {
+                  "publishIfValid": {
+                    "default": false,
+                    "type": "boolean"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "202": {
+            "description": "Success"
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/questions/{id}/publish": {
+      "post": {
+        "operationId": "postQuestionsIdPublish",
+        "tags": [
+          "questions"
+        ],
+        "summary": "Publish the validated latest version",
+        "description": "Requires permission `question:write`.",
+        "security": [
+          {
+            "session": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success"
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/practice/questions": {
+      "get": {
+        "operationId": "getPracticeQuestions",
+        "tags": [
+          "practice"
+        ],
+        "summary": "Published practice questions",
+        "description": "Requires permission `practice:use`.",
+        "security": [
+          {
+            "session": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success"
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/practice/questions/{id}": {
+      "get": {
+        "operationId": "getPracticeQuestionsId",
+        "tags": [
+          "practice"
+        ],
+        "summary": "Learner view (no hidden data)",
+        "description": "Requires permission `practice:use`.",
+        "security": [
+          {
+            "session": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success"
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/submissions": {
+      "post": {
+        "operationId": "postSubmissions",
+        "tags": [
+          "submissions"
+        ],
+        "summary": "Run (samples/custom input) or submit (hidden tests)",
+        "description": "Requires permission `practice:use`.",
+        "security": [
+          {
+            "session": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$schema": "https://json-schema.org/draft/2020-12/schema",
+                "type": "object",
+                "properties": {
+                  "questionId": {
+                    "type": "string",
+                    "format": "uuid",
+                    "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                  },
+                  "runtime": {
+                    "type": "string",
+                    "enum": [
+                      "c",
+                      "cpp",
+                      "java",
+                      "python",
+                      "javascript",
+                      "go",
+                      "rust",
+                      "csharp"
+                    ]
+                  },
+                  "code": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 65536
+                  },
+                  "kind": {
+                    "type": "string",
+                    "enum": [
+                      "run",
+                      "submit"
+                    ]
+                  },
+                  "customInput": {
+                    "type": "string",
+                    "maxLength": 65536
+                  }
+                },
+                "required": [
+                  "questionId",
+                  "runtime",
+                  "code",
+                  "kind"
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "202": {
+            "description": "Success"
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          }
+        }
+      },
+      "get": {
+        "operationId": "getSubmissions",
+        "tags": [
+          "submissions"
+        ],
+        "summary": "My recent submissions for a question",
+        "security": [
+          {
+            "session": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "questionId",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "$schema": "https://json-schema.org/draft/2020-12/schema",
+              "type": "string",
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success"
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/submissions/{id}": {
+      "get": {
+        "operationId": "getSubmissionsId",
+        "tags": [
+          "submissions"
+        ],
+        "summary": "Submission result (hidden tests: verdict only)",
+        "security": [
+          {
+            "session": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success"
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/submissions/{id}/events": {
+      "get": {
+        "operationId": "getSubmissionsIdEvents",
+        "tags": [
+          "submissions"
+        ],
+        "summary": "Server-Sent Events stream of status changes",
+        "security": [
+          {
+            "session": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success"
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/drafts/{questionId}": {
+      "get": {
+        "operationId": "getDraftsQuestionId",
+        "tags": [
+          "submissions"
+        ],
+        "summary": "Autosaved drafts",
+        "security": [
+          {
+            "session": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "questionId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success"
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/drafts/{questionId}/{runtime}": {
+      "put": {
+        "operationId": "putDraftsQuestionIdRuntime",
+        "tags": [
+          "submissions"
+        ],
+        "summary": "Autosave a draft",
+        "security": [
+          {
+            "session": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "questionId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "runtime",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$schema": "https://json-schema.org/draft/2020-12/schema",
+                "type": "object",
+                "properties": {
+                  "code": {
+                    "type": "string",
+                    "maxLength": 65536
+                  }
+                },
+                "required": [
+                  "code"
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "204": {
+            "description": "Success"
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/runtimes": {
+      "get": {
+        "operationId": "getRuntimes",
+        "tags": [
+          "meta"
+        ],
+        "summary": "Pinned language versions",
+        "security": [],
+        "responses": {
+          "200": {
+            "description": "Success"
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  "components": {
+    "securitySchemes": {
+      "session": {
+        "type": "apiKey",
+        "in": "cookie",
+        "name": "hb_at"
+      }
+    },
+    "schemas": {
+      "Problem": {
+        "type": "object",
+        "properties": {
+          "type": {
+            "type": "string"
+          },
+          "title": {
+            "type": "string"
+          },
+          "status": {
+            "type": "integer"
+          },
+          "detail": {
+            "type": "string"
+          },
+          "requestId": {
+            "type": "string"
+          }
+        }
+      },
+      "SessionUser": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+          },
+          "email": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "role": {
+            "type": "string",
+            "enum": [
+              "super_admin",
+              "client_admin",
+              "teacher",
+              "associate",
+              "student",
+              "guest"
+            ]
+          },
+          "tenantId": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid",
+                "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "tenantName": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "mfaEnabled": {
+            "type": "boolean"
+          },
+          "mfaSetupRequired": {
+            "type": "boolean"
+          },
+          "memberships": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "tenantId": {
+                  "type": "string",
+                  "format": "uuid",
+                  "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                },
+                "tenantName": {
+                  "type": "string"
+                },
+                "role": {
+                  "type": "string",
+                  "enum": [
+                    "super_admin",
+                    "client_admin",
+                    "teacher",
+                    "associate",
+                    "student",
+                    "guest"
+                  ]
+                }
+              },
+              "required": [
+                "tenantId",
+                "tenantName",
+                "role"
+              ]
+            }
+          }
+        },
+        "required": [
+          "id",
+          "email",
+          "name",
+          "role",
+          "tenantId",
+          "tenantName",
+          "mfaEnabled",
+          "mfaSetupRequired",
+          "memberships"
+        ]
+      }
+    }
+  }
+}
