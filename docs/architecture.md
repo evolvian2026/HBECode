@@ -677,6 +677,42 @@ can serve a few hundred users. **5,000 concurrent users is not possible on free 
 orders of magnitude of executor CPU. The design keeps the path to it as configuration only: add executor
 nodes (or an ASG on AWS) and raise replica counts. Phase 8 will publish measured numbers for the free setup.
 
+### 15.3 Approved pilot deployment (10–20 users), which replaces 15.2 for now
+
+Approved on 2026-10-01. Paid AWS and Supabase come later, when usage grows.
+
+```mermaid
+flowchart TB
+  U["Users (India)"] --> WEB["Render Static Site<br/>app.&lt;domain&gt; (Next.js export)"]
+  U --> API["Render Web Service (free, Singapore)<br/>api.&lt;domain&gt; — API + SSE + sweeper"]
+  API --> KV[("Render Key Value (free, internal)<br/>dispatch lists · rate limits · pub/sub")]
+  API --> SB[("Supabase free (Singapore)<br/>Postgres + RLS · Storage")]
+  EX["Oracle Always Free A1 VM (Singapore)<br/>executor agent + nsjail"] -- "HTTPS long-poll<br/>claim / result" --> API
+```
+
+| Concern | Pilot choice | Notes |
+|---|---|---|
+| Region | Singapore for all parts | Render has no India region. India → Singapore is ~50–70 ms. |
+| Frontend | Render Static Site | Free and never sleeps. 5 GB/mo of free bandwidth is enough for 20 users. |
+| API | Render free web service (0.1 CPU, 512 MB) | Sleeps after 15 min idle (~1 min wake-up). **Open the site a few minutes before a session.** Argon2id uses the OWASP minimum parameters (19 MiB, t=2) so logins stay fast on 0.1 CPU. |
+| Redis | Render Key Value free (25 MB, **not persistent**) | Only holds data we can rebuild. **Postgres is the source of truth for submissions.** A sweeper re-queues `queued`/`running` submissions whose lease expired, so a Redis restart loses nothing. |
+| Database | Supabase free (500 MB, 200 pooled connections) | We use our own auth, not Supabase Auth. **The Supabase Data API (PostgREST) must be turned off**, or `public` must not be exposed, so the anon key cannot reach our tables. Connections go through the Supavisor pooler in transaction mode, which works with `SET LOCAL`. Pauses after 7 days idle. |
+| Code execution | Oracle Always Free A1 VM (Ubuntu 24.04, cgroup v2) | Render cannot run nsjail on any plan. The executor **pulls jobs from the API over HTTPS** with a per-executor token. It holds no DB or Redis credentials. |
+| Domain | `app.<domain>` and `api.<domain>` (DNS on AWS Route 53) | Must be the same registrable domain so `SameSite=Strict` cookies work. `*.onrender.com` is on the Public Suffix List, so the default Render URLs count as cross-site. |
+| T-SQL | **Postponed** (decision Q1) | |
+
+### 15.4 Design changes made during Phase 2 (decision log)
+
+| Change | Reason |
+|---|---|
+| Exec dispatch uses **Postgres as the source of truth plus Redis priority lists** (`LMPOP` over `exec:run`, `exec:submit`, `exec:practice`). It no longer uses BullMQ. BullMQ may still be used for background jobs in later phases. | The executor pulls over HTTPS, and Redis on the free tier is not persistent. The `JobQueue` port still maps 1:1 to SQS. |
+| Executors talk **HTTPS to the API**, not directly to Redis. | Render Key Value is internal-only. This is also a smaller blast radius: a sandbox escape gets one executor token and nothing else. |
+| Submission status is streamed with **Server-Sent Events**, with polling as a fallback. WebSocket arrives in Phase 4 for proctoring. | One-way updates are all Phase 2 needs. SSE goes through any proxy. |
+| Super Admin cross-tenant access uses a transaction-local `app.platform_admin` GUC that only the API sets, after checking `users.is_platform_admin` + MFA. It no longer uses a separate DB role. | One connection pool (the pilot has 200 pooler slots). The API is the only writer of GUCs, and all SQL is parameterized. |
+| The seccomp profile is a **denylist** of dangerous syscalls (ptrace, mount, unshare, setns, bpf, keyctl, io_uring, perf_event_open, userfaultfd, kexec, module loading, …), on top of user/PID/mount/net/IPC namespaces. | The 8 runtimes (JVM, .NET, Go) need wide, version-specific syscall sets. Per-runtime allowlists will be built from traces in Phase 8. |
+| The executor uses **one image with all toolchains** and mounts only the needed paths read-only into each jail. | Simpler to operate on a single VM. Per-language images remain possible later. |
+| Monthly partitioning of `submissions`/`proctor_events` is deferred until volume calls for it. | Pilot volume is tiny, and the change can be added without touching the API. |
+
 ---
 
 ## 16. AWS target architecture and migration

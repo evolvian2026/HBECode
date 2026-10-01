@@ -1,0 +1,13 @@
+node_modules/
+dist/
+out/
+.next/
+coverage/
+*.log
+.env
+.env.*
+!.env.example
+apps/web/public/monaco/
+playwright-report/
+test-results/
+.turbo/
