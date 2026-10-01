@@ -62,7 +62,11 @@ export class PostgresRunner {
       } finally {
         c.release();
       }
-    })();
+    })().catch((e: unknown) => {
+      // Not cached on failure: the runner may simply not be up yet; the next call retries.
+      this.ready = null;
+      throw e;
+    });
     return this.ready;
   }
 

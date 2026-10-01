@@ -388,7 +388,9 @@ export class QuestionsService {
       const key = s.validationRole === 'starter' ? `${s.runtime}:starter` : s.runtime;
       const limitMs = limitFor(v, s.runtime);
       const verdicts = result.tests.map((t) => t.verdict);
-      const maxCpuMs = Math.max(0, ...result.tests.map((t) => t.cpuMs));
+      // Coding: CPU time measured in the jail. Web/DB: the browser and the DB servers are not
+      // CPU-accounted per test, so their wall time is held to the same headroom rule.
+      const maxCpuMs = Math.max(0, ...result.tests.map((t) => (type === 'coding' ? t.cpuMs : Math.max(t.cpuMs, t.wallMs ?? 0))));
       const ranAll = result.compile.ok && !result.internalError && verdicts.length === tests.length;
       let ok: boolean;
       let why = '';
@@ -401,8 +403,9 @@ export class QuestionsService {
         ok = ranAll && verdicts.every((x) => x === 'AC') && maxCpuMs <= limitMs * HEADROOM;
         if (!ok) why = !result.compile.ok ? 'reference solution does not compile' : verdicts.some((x) => x !== 'AC') ? `reference solution fails: ${verdicts.join(' ')}` : `slowest test ${maxCpuMs} ms exceeds ${Math.round(HEADROOM * 100)}% of the ${limitMs} ms limit`;
       } else {
-        ok = ranAll && verdicts.every((x) => x === 'AC');
-        if (!ok) {
+        ok = ranAll && verdicts.every((x) => x === 'AC') && maxCpuMs <= limitMs * HEADROOM;
+        if (!ok && ranAll && verdicts.every((x) => x === 'AC')) why = `slowest ${type === 'web' ? 'check' : 'dataset'} took ${maxCpuMs} ms, over ${Math.round(HEADROOM * 100)}% of the ${limitMs} ms limit`;
+        else if (!ok) {
           const badTest = tests.find((t) => byTest.get(t.id)?.verdict !== 'AC');
           const r = badTest ? byTest.get(badTest.id) : undefined;
           const label = badTest ? `${badTest.visibility} ${badTest.ordinal}` : '';

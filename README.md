@@ -4,7 +4,9 @@ A multi-tenant online coding assessment platform. Students write code in a brows
 secure sandbox against hidden tests, and get feedback in about a second. Institutions manage their
 own teachers, students and batches; teachers manage the question bank.
 
-**Status: Phase 2 of 8 (core) — done.** See [Phase 2 report](docs/phase-2-report.md) for what was built and measured.
+**Status: Phase 3 of 8 (web and DB question engines) — done.** See the [Phase 3 report](docs/phase-3-report.md) (and [Phase 2](docs/phase-2-report.md)) for what was built and measured.
+
+Question types: **coding** (C, C++, Java, Python, JavaScript, Go, Rust, C#), **web** (HTML/CSS/JavaScript and React, with a live preview, graded in headless Chromium) and **database** (PostgreSQL, MySQL, MongoDB, Pandas).
 
 | Docs | |
 |---|---|
@@ -19,8 +21,8 @@ Requirements: **Docker** with Compose v2 (Linux host, or Docker Desktop). That's
 
 ```bash
 git clone https://github.com/evolvian2026/HBECode.git && cd HBECode
-docker compose up --build -d          # first build ≈ 6–10 min (the executor image holds 8 toolchains)
-docker compose run --rm seed          # admin + demo users; queues the seed question for validation
+docker compose up --build -d          # first build ≈ 10–15 min (8 toolchains + Chromium + pandas)
+docker compose run --rm seed          # admin + demo users; queues the 7 seed questions for validation
 ```
 
 Open http://localhost:3000 and sign in:
@@ -34,8 +36,13 @@ Open http://localhost:3000 and sign in:
 | Super admin (MFA enrolment forced) | `admin@hbecode.local` | `admin-password-dev-1` |
 
 These are development defaults. Change them in `.env` (see `.env.example`) and never reuse them anywhere real.
-The seed question "Sum of an Array" appears in Practice once the executor has validated all 8
-reference solutions, which takes about 20 s after `seed`.
+The seed questions appear in Practice once the executor has validated them (about a minute after `seed`):
+*Sum of an Array* (coding, 8 languages), *Responsive Profile Card* (HTML/CSS), *To-do List with Vanilla
+JavaScript*, *React Shopping Cart*, *Top Earner per Department* (PostgreSQL + MySQL), *Paid Order Totals by
+Customer* (MongoDB) and *Monthly Revenue by Region* (Pandas).
+
+If ports 5432 or 6379 are already in use on your machine, set `PG_HOST_PORT` / `REDIS_HOST_PORT` (for
+example `PG_HOST_PORT=15432 docker compose up -d`). The DB-question runner containers publish no ports.
 
 ## Develop without Docker (except the executor)
 
@@ -43,7 +50,7 @@ Needs Node 22, pnpm 10, PostgreSQL 16 and Redis 7.
 
 ```bash
 pnpm install
-pnpm --filter @hbe/shared build && pnpm --filter @hbe/db build
+pnpm --filter @hbe/shared build && pnpm --filter @hbe/web-runtime build && pnpm --filter @hbe/db build
 createuser/createdb …   # role hbe_owner LOGIN CREATEROLE CREATEDB; database hbe_dev owned by it
 DATABASE_ADMIN_URL=postgres://hbe_owner:…@127.0.0.1/hbe_dev HBE_APP_DB_PASSWORD=… pnpm db:migrate
 DATABASE_URL=postgres://hbe_app:…@127.0.0.1/hbe_dev EXECUTOR_TOKENS=<32+ chars> pnpm dev:api
@@ -56,9 +63,12 @@ docker compose up -d executor   # or run the executor container by hand (docs/de
 ```
 apps/api        NestJS + Fastify API (auth, RBAC, tenancy, questions, submissions, executor dispatch)
 apps/web        Next.js static app (Monaco IDE, question editor, admin pages)
-apps/executor   sandbox agent: nsjail + hbe-run + seccomp, one image with 8 pinned toolchains
+apps/executor   sandbox agent: nsjail + hbe-run + seccomp, 8 pinned toolchains, jailed headless Chromium,
+                PostgreSQL/MySQL/MongoDB runner clients, pandas harness
 packages/db     SQL migrations (tables + RLS), Drizzle schema, seed questions
-packages/shared roles/permissions, runtimes, Zod schemas, executor job contract
+packages/shared roles/permissions, runtimes, Zod schemas (coding/web/DB questions), result comparison,
+                executor job contract
+packages/web-runtime  builds one self-contained document from web files (preview and grader share it)
 ```
 
 ## Tests
@@ -66,9 +76,10 @@ packages/shared roles/permissions, runtimes, Zod schemas, executor job contract
 | Command | What it covers | Needs |
 |---|---|---|
 | `pnpm lint` | ESLint (incl. a ban on `sql.raw`) | — |
-| `pnpm --filter @hbe/shared test` | output comparison modes, roles, publish rules | — |
+| `pnpm --filter @hbe/shared test` | output/result comparison, Mongo query guard, roles, publish rules | — |
+| `pnpm --filter @hbe/web-runtime test` | HTML inlining, React multi-file build, compile errors | — |
 | `pnpm --filter @hbe/db test` | RLS forced on every table, tenant isolation, hidden data, append-only audit | Postgres |
 | `pnpm --filter @hbe/api test` | auth (CSRF, lockout, refresh reuse, MFA), RBAC matrix, full question → submission flow | Postgres, Redis |
-| `pnpm --filter @hbe/executor test:sandbox` | 8 languages + escape attempts (fork bomb, network, seccomp, …) | Docker + `hbe-executor:dev` image |
-| `pnpm --filter @hbe/api test:e2e` | API + real sandbox, latency measurement | Docker + image |
-| `pnpm --filter @hbe/web test:e2e` | browser flows (student solve, compile error, MFA, admin) | running stack |
+| `pnpm --filter @hbe/executor test:sandbox` | 8 languages + escape attempts (fork bomb, network, seccomp, …), web grader (network isolation, anti-tampering), DB runners (isolation, timeouts, Mongo guard, pandas) | Docker + `hbe-executor:dev` image (starts its own runner containers) |
+| `pnpm --filter @hbe/api test:e2e` | API + real sandbox for coding, web and DB questions: seed validation, grading, leak checks, latency | Docker + image |
+| `pnpm --filter @hbe/web test:e2e` | browser flows (coding/web/DB solving, preview sandbox, authoring, MFA, admin) | running stack (`docker compose up` + `seed`) |

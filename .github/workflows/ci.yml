@@ -21,11 +21,12 @@ jobs:
       - uses: actions/setup-node@v4
         with: { node-version: 22, cache: pnpm }
       - run: pnpm install --frozen-lockfile
-      - run: pnpm --filter @hbe/shared build && pnpm --filter @hbe/db build
+      - run: pnpm --filter @hbe/shared build && pnpm --filter @hbe/web-runtime build && pnpm --filter @hbe/db build
       - run: pnpm lint
       - run: pnpm --filter @hbe/api exec tsc -p tsconfig.json --noEmit
       - run: pnpm --filter @hbe/executor typecheck
       - run: pnpm --filter @hbe/shared test
+      - run: pnpm --filter @hbe/web-runtime test
       - run: pnpm --filter @hbe/executor test
       - name: Web build (static export + CSP)
         run: pnpm --filter @hbe/web build
@@ -90,14 +91,15 @@ jobs:
           severity: CRITICAL
           ignore-unfixed: true
           exit-code: '0' # report only until the baseline is triaged
-      - run: pnpm --filter @hbe/shared build && pnpm --filter @hbe/db build && pnpm --filter @hbe/api build
-      - name: Sandbox tests (8 languages + escape attempts)
+      - run: pnpm --filter @hbe/shared build && pnpm --filter @hbe/web-runtime build && pnpm --filter @hbe/db build && pnpm --filter @hbe/api build
+      # Also starts throwaway PostgreSQL/MySQL/MongoDB runner containers for the DB suite.
+      - name: Sandbox tests (8 languages, escape attempts, web grader, DB runners)
         run: pnpm --filter @hbe/executor test:sandbox
-      - name: API + real executor end-to-end (latency report)
+      - name: API + real executor end-to-end (coding, web and DB questions; latency report)
         run: |
           PGPASSWORD=postgres psql -h 127.0.0.1 -U postgres -c "CREATE ROLE hbe_owner LOGIN CREATEROLE CREATEDB PASSWORD 'hbe_owner'"
           pnpm --filter @hbe/api test:e2e
-          cat /tmp/hbe-e2e-latency.json >> "$GITHUB_STEP_SUMMARY"
+          { echo '### Coding latency (ms)'; echo '```json'; cat /tmp/hbe-e2e-latency.json; echo '```'; echo '### Web/DB latency (ms)'; echo '```json'; cat /tmp/hbe-e2e-webdb-latency.json; echo '```'; } >> "$GITHUB_STEP_SUMMARY"
 
   secrets-scan:
     name: Secret scan

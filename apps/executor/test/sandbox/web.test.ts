@@ -120,6 +120,20 @@ describe('HTML/CSS/JS checks', () => {
     expect(hits).toBe(1);
   });
 
+  it('a step on a missing element fails fast with a reason, not a timeout', async () => {
+    const t0 = Date.now();
+    const r = await sb.run(
+      web('html', { 'index.html': '<!doctype html><html lang="en"><body><p id="p">x</p></body></html>' }, [
+        check({ kind: 'interaction', steps: [{ action: 'click', selector: '#add' }], then: { kind: 'exists', selector: 'li' } }),
+        check({ kind: 'interaction', steps: [{ action: 'fill', selector: '#task', value: 'a' }], then: { kind: 'exists', selector: 'li' } }, { hidden: true }),
+      ]),
+    );
+    expect(r.tests.map((t) => t.verdict)).toEqual(['WA', 'WA']);
+    expect(r.tests[0]!.detail).toBe('could not click "#add" (not found, hidden or disabled)');
+    expect(r.tests[1]!.detail).toBeUndefined();
+    expect(Date.now() - t0).toBeLessThan(8000); // was ~2 × 5 s before steps had their own wait
+  });
+
   it('an infinite loop times out without breaking the next job; nothing persists between jobs', async () => {
     const loop = await sb.run(web('html', { 'index.html': '<!doctype html><html><body><p id="p">x</p><script>while(true){}</script></body></html>' }, [check({ kind: 'text', selector: '#p', match: { equals: 'x' } })]));
     expect(['TLE', 'RE']).toContain(loop.tests[0]!.verdict);

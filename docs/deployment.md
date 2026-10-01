@@ -75,7 +75,24 @@ Keep them in a password manager. Never commit them. `.env*` files are git-ignore
    sudo apt-get update && sudo apt-get install -y docker.io git
    sudo systemctl enable --now docker
    git clone https://github.com/evolvian2026/HBECode.git && cd HBECode
-   sudo docker build -f apps/executor/Dockerfile -t hbe-executor .      # ~10 min on A1, native ARM64
+   sudo docker build -f apps/executor/Dockerfile -t hbe-executor .      # ~15 min on A1, native ARM64
+
+   # Database runners for DB questions (PostgreSQL, MySQL, MongoDB). They live on an internal
+   # Docker network: no published ports, no internet, reachable only from the executor.
+   # Data is on tmpfs, so nothing survives a restart (none is needed).
+   RPG=$(openssl rand -hex 16); RMY=$(openssl rand -hex 16); RMO=$(openssl rand -hex 16)
+   sudo docker network create --internal hbe-runners
+   sudo docker run -d --name runner-pg --network hbe-runners --restart unless-stopped --memory 512m \
+     --security-opt no-new-privileges --tmpfs /var/lib/postgresql/data \
+     -e POSTGRES_USER=runner_admin -e POSTGRES_PASSWORD=$RPG postgres:16-alpine
+   sudo docker run -d --name runner-mysql --network hbe-runners --restart unless-stopped --memory 768m \
+     --security-opt no-new-privileges --tmpfs /var/lib/mysql \
+     -e MYSQL_ROOT_PASSWORD=$RMY mysql:8.4 \
+     --local-infile=0 --secure-file-priv=NULL --skip-name-resolve --performance-schema=0 --innodb-buffer-pool-size=64M --max-connections=100
+   sudo docker run -d --name runner-mongo --network hbe-runners --restart unless-stopped --memory 512m \
+     --security-opt no-new-privileges --tmpfs /data/db \
+     -e MONGO_INITDB_ROOT_USERNAME=root -e MONGO_INITDB_ROOT_PASSWORD=$RMO mongo:8.0 --noscripting --wiredTigerCacheSizeGB 0.25
+
    sudo docker run -d --name hbe-executor --restart unless-stopped \
      --cap-drop ALL --cap-add SYS_ADMIN --cap-add SETUID --cap-add SETGID --cap-add CHOWN \
      --cap-add DAC_OVERRIDE --cap-add FOWNER --cap-add KILL \
@@ -83,19 +100,27 @@ Keep them in a password manager. Never commit them. `.env*` files are git-ignore
      --cgroupns private \
      -e EXECUTOR_API_URL=https://api.<domain> -e EXECUTOR_TOKEN='<EXECUTOR_TOKEN>' \
      -e EXECUTOR_ID=oci-sg-1 -e EXECUTOR_SLOTS=2 \
+     -e PG_RUNNER_URL=postgres://runner_admin:$RPG@runner-pg:5432/postgres \
+     -e MYSQL_RUNNER_URL=mysql://root:$RMY@runner-mysql:3306 \
+     -e "MONGO_RUNNER_URL=mongodb://root:$RMO@runner-mongo:27017/?authSource=admin" \
      hbe-executor
-   sudo docker logs -f hbe-executor     # expect "executor starting" with all 8 runtimes
+   sudo docker network connect hbe-runners hbe-executor   # executor: internet (API) + runners
+   sudo docker logs -f hbe-executor     # expect "executor starting" listing 8 runtimes, web:html, web:react and db:*
    ```
-3. **Why these flags:** nsjail needs `CAP_SYS_ADMIN` and a writable cgroup tree to build each sandbox. `--cgroupns private` keeps the executor inside its own cgroup subtree. **Never mount the host's `/sys/fs/cgroup`:** the agent refuses to start if it can see processes outside its container. With these privileges the container itself is a weak boundary. **The VM must run nothing else.** The security boundary is nsjail around every submission: user/PID/mount/network namespaces, uid 65534, seccomp, cgroups and a read-only root filesystem. It is exercised by `pnpm --filter @hbe/executor test:sandbox`. The VM holds no database or Redis credentials, only the executor token.
+   The runner passwords exist only in these containers' environment; the API never sees them. If the executor restarts before the runners are ready, it simply retries (`restart unless-stopped`).
+3. **Why these flags:** nsjail needs `CAP_SYS_ADMIN` and a writable cgroup tree to build each sandbox. `--cgroupns private` keeps the executor inside its own cgroup subtree. **Never mount the host's `/sys/fs/cgroup`:** the agent refuses to start if it can see processes outside its container. With these privileges the container itself is a weak boundary. **The VM must run nothing else.** The security boundary is nsjail around every submission: user/PID/mount/network namespaces, uid 65534, seccomp, cgroups and a read-only root filesystem. It is exercised by `pnpm --filter @hbe/executor test:sandbox`. The VM holds no platform database or Redis credentials, only the executor token and the passwords of its own throwaway runner databases. Student SQL runs as a per-run database user that can see only that run's database (MongoDB: a per-run user with the `read` role); web submissions run in headless Chromium inside the same nsjail sandbox, with no network.
 
 > ⚠️ Not yet verified: the sandbox suite passed on an x86_64 / cgroup v1 host. Oracle A1 is ARM64 with cgroup v2. CI (GitHub's Ubuntu 24.04 runners, cgroup v2) covers the cgroup v2 path; ARM64 has not run yet. **After step 2, run the sandbox suite on the VM once**:
-> `docker run --rm --entrypoint /opt/node/bin/node hbe-executor /opt/hbe/agent/cli-versions.mjs` (all 8 runtimes listed), then `pnpm install && pnpm --filter @hbe/executor test:sandbox`.
+> `docker run --rm --entrypoint /opt/node/bin/node hbe-executor /opt/hbe/agent/dist/cli-versions.js` (all 8 runtimes plus `web:html`, `web:react`, `db:pandas` listed; the `db:*` runners show as "not set" in this one-off container), then `pnpm install && pnpm --filter @hbe/executor test:sandbox`.
+> ARM64 has also not been checked for the Phase 3 pieces: Playwright's headless Chromium build, and the `mysql:8.4` and `mongo:8.0` images (both publish arm64 builds; MongoDB 8 needs ARMv8.2-A, which Ampere A1 has).
 
 ## 5. Smoke test
 
 1. Sign in as the super admin and create an institution (Institutions page).
 2. Users → invite an institution admin, a teacher and a student, and open the invite links.
 3. As the student: Practice → *Sum of an Array* → Run → Submit → *Accepted*.
+4. Practice → *React Shopping Cart*: the preview renders on the right. Practice → *Top Earner per Department* → PostgreSQL: the expected table is shown under *Expected output*.
+5. Check that the preview frame may be framed by the app: `curl -sI https://app.<domain>/preview/frame.html | grep -i -E 'x-frame-options|content-security-policy'` must show `SAMEORIGIN` and `frame-ancestors 'self'`. If Render applied the `/*` rules instead (`DENY`), the preview stays blank; see the `/preview/*` rules in `render.yaml`.
 
 ## Upgrading later
 

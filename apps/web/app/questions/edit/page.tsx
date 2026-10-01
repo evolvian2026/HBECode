@@ -162,7 +162,7 @@ export default function EditQuestion() {
 
       <div className="grid gap-4 lg:grid-cols-[1fr_300px]">
         <div>
-          <fieldset disabled={!writable} className="space-y-4">
+          <div className="space-y-4">
             {q.type === 'web' ? (
               <WebFields q={q} setQ={narrow<typeof q>()} isNew={!id} writable={writable} />
             ) : q.type === 'db' ? (
@@ -170,7 +170,7 @@ export default function EditQuestion() {
             ) : (
               <CodingFields q={q} setQ={narrow<typeof q>()} writable={writable} />
             )}
-          </fieldset>
+          </div>
         </div>
 
         <aside className="space-y-4">

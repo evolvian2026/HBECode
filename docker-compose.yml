@@ -4,7 +4,7 @@
 #   docker compose run --rm seed     (creates the admin/demo accounts and queues seed questions)
 # Web: http://localhost:3000   API: http://localhost:4000
 #
-# Ports are bound to 127.0.0.1 only. The executor needs extra privileges to build sandboxes
+# Ports are bound to 127.0.0.1 only (PG_HOST_PORT / REDIS_HOST_PORT change the host side if 5432/6379 are taken). The executor needs extra privileges to build sandboxes
 # (see docs/deployment.md#executor); every submission still runs as uid 65534 inside nsjail.
 name: hbecode
 
@@ -19,7 +19,7 @@ services:
       POSTGRES_USER: hbe_owner
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-hbe_owner_dev}
       POSTGRES_DB: hbe
-    ports: ['127.0.0.1:5432:5432']
+    ports: ['127.0.0.1:${PG_HOST_PORT:-5432}:5432']
     volumes: [pgdata:/var/lib/postgresql/data]
     healthcheck:
       test: ['CMD-SHELL', 'pg_isready -U hbe_owner -d hbe']
@@ -29,7 +29,7 @@ services:
   redis:
     image: mirror.gcr.io/library/redis:7-alpine
     command: ['redis-server', '--appendonly', 'no', '--maxmemory-policy', 'noeviction']
-    ports: ['127.0.0.1:6379:6379']
+    ports: ['127.0.0.1:${REDIS_HOST_PORT:-6379}:6379']
     healthcheck:
       test: ['CMD', 'redis-cli', 'ping']
       interval: 2s
@@ -74,6 +74,52 @@ services:
     depends_on:
       migrate: { condition: service_completed_successfully }
 
+  # Database runners for DB questions: reachable only from the executor (internal network, no
+  # published ports), data on tmpfs (nothing persists), hardened server flags. Student queries
+  # run as per-run users/databases created and dropped by the executor.
+  runner-pg:
+    image: mirror.gcr.io/library/postgres:16-alpine
+    environment:
+      POSTGRES_USER: runner_admin
+      POSTGRES_PASSWORD: ${RUNNER_PG_PASSWORD:-runner-pg-dev}
+    tmpfs: [/var/lib/postgresql/data]
+    networks: [runners]
+    mem_limit: 512m
+    security_opt: ['no-new-privileges:true']
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U runner_admin']
+      interval: 2s
+      retries: 60
+
+  runner-mysql:
+    image: mirror.gcr.io/library/mysql:8.4
+    command: ['--local-infile=0', '--secure-file-priv=NULL', '--skip-name-resolve', '--performance-schema=0', '--innodb-buffer-pool-size=64M', '--max-connections=100']
+    environment:
+      MYSQL_ROOT_PASSWORD: ${RUNNER_MYSQL_PASSWORD:-runner-mysql-dev}
+    tmpfs: [/var/lib/mysql]
+    networks: [runners]
+    mem_limit: 768m
+    security_opt: ['no-new-privileges:true']
+    healthcheck:
+      test: ['CMD-SHELL', 'mysqladmin ping -h 127.0.0.1 -uroot -p"$$MYSQL_ROOT_PASSWORD" --silent']
+      interval: 3s
+      retries: 60
+
+  runner-mongo:
+    image: mirror.gcr.io/library/mongo:8.0
+    command: ['--noscripting', '--wiredTigerCacheSizeGB', '0.25']
+    environment:
+      MONGO_INITDB_ROOT_USERNAME: root
+      MONGO_INITDB_ROOT_PASSWORD: ${RUNNER_MONGO_PASSWORD:-runner-mongo-dev}
+    tmpfs: [/data/db]
+    networks: [runners]
+    mem_limit: 512m
+    security_opt: ['no-new-privileges:true']
+    healthcheck:
+      test: ['CMD', 'mongosh', '--quiet', '--eval', 'db.runCommand({ping:1})']
+      interval: 3s
+      retries: 60
+
   executor:
     build: { <<: *build, dockerfile: apps/executor/Dockerfile }
     image: hbe-executor:dev
@@ -82,11 +128,19 @@ services:
       EXECUTOR_TOKEN: ${EXECUTOR_TOKEN:-dev-executor-token-change-me-0123456789}
       EXECUTOR_ID: local-1
       EXECUTOR_SLOTS: 2
+      PG_RUNNER_URL: postgres://runner_admin:${RUNNER_PG_PASSWORD:-runner-pg-dev}@runner-pg:5432/postgres
+      MYSQL_RUNNER_URL: mysql://root:${RUNNER_MYSQL_PASSWORD:-runner-mysql-dev}@runner-mysql:3306
+      MONGO_RUNNER_URL: mongodb://root:${RUNNER_MONGO_PASSWORD:-runner-mongo-dev}@runner-mongo:27017/?authSource=admin
+    networks: [default, runners]
     cap_drop: [ALL]
     cap_add: [SYS_ADMIN, SETUID, SETGID, CHOWN, DAC_OVERRIDE, FOWNER, KILL]
     security_opt: ['seccomp=unconfined', 'apparmor=unconfined', 'systempaths=unconfined']
     cgroup: private
-    depends_on: [api]
+    depends_on:
+      api: { condition: service_started }
+      runner-pg: { condition: service_healthy }
+      runner-mysql: { condition: service_healthy }
+      runner-mongo: { condition: service_healthy }
     restart: unless-stopped
 
   web:
@@ -101,6 +155,11 @@ secrets:
   # Only needed behind a TLS-intercepting proxy; an empty file is ignored.
   extra_ca:
     file: ${EXTRA_CA_FILE:-./.empty-ca}
+
+networks:
+  default: {}
+  # No route out: runners can talk to the executor and nothing else.
+  runners: { internal: true }
 
 volumes:
   pgdata:

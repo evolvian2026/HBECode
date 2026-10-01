@@ -81,6 +81,8 @@ export function WebFields({ q, setQ, isNew, writable }: { q: WebQuestionInput; s
   return (
     <>
       <Tabs tabs={['details', 'files', 'checks'] as const} value={tab} onChange={setTab} label={(t) => (t === 'details' ? 'Details' : t === 'files' ? 'Files' : `Checks (${q.samples.length + q.hidden.length})`)} />
+      {/* Tabs stay usable in read-only mode; only the fields are disabled. */}
+      <fieldset disabled={!writable} className="space-y-4">
       {tab === 'details' && (
         <CommonDetails q={q} set={set}>
           <Field label="Framework" hint={isNew ? undefined : 'Cannot change after creation'}>
@@ -130,6 +132,7 @@ export function WebFields({ q, setQ, isNew, writable }: { q: WebQuestionInput; s
           {q.hidden.map((c, i) => <CheckRow key={`h${i}`} idPrefix={`author/hidden-${i}`} c={c} onChange={(n) => set('hidden', q.hidden.map((x, j) => (j === i ? n : x)))} onRemove={() => set('hidden', q.hidden.filter((_, j) => j !== i))} />)}
         </div>
       )}
+      </fieldset>
     </>
   );
 }

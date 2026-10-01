@@ -106,8 +106,16 @@ async function assert(page: Page, cdp: CDPSession, a: AssertSpec, timeout: numbe
   }
 }
 
-async function runCheck(page: Page, cdp: CDPSession, spec: CheckSpec, timeout: number): Promise<void> {
-  if (spec.kind !== 'interaction') return assert(page, cdp, spec, timeout);
+/**
+ * How long one interaction step waits for its element. The page has already loaded, so a
+ * missing element fails fast with a clear reason instead of burning the whole check budget (which
+ * stays the infinite-loop guard) and holding the executor slot.
+ */
+const STEP_WAIT_MS = 1500;
+
+async function runCheck(page: Page, cdp: CDPSession, spec: CheckSpec, checkTimeout: number): Promise<void> {
+  if (spec.kind !== 'interaction') return assert(page, cdp, spec, checkTimeout);
+  const timeout = Math.min(STEP_WAIT_MS, Math.floor(checkTimeout / 2));
   for (const s of spec.steps) {
     const loc = page.locator(s.selector).first();
     try {
@@ -125,7 +133,7 @@ async function runCheck(page: Page, cdp: CDPSession, spec: CheckSpec, timeout: n
   }
   // Let the page react (state updates, re-render, transitions start).
   await page.evaluate(TWO_FRAMES).catch(() => undefined);
-  return assert(page, cdp, spec.then, timeout);
+  return assert(page, cdp, spec.then, checkTimeout);
 }
 
 async function gradeOne(browser: Browser, html: string, check: WebJob['checks'][number], timeout: number, explainHidden: boolean): Promise<ExecTestResult> {

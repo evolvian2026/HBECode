@@ -129,6 +129,8 @@ export function DbFields({ q, setQ, writable }: { q: DbQuestionInput; setQ: (f: 
   return (
     <>
       <Tabs tabs={['details', 'datasets', 'queries'] as const} value={tab} onChange={setTab} label={(t) => (t === 'details' ? 'Details' : t === 'datasets' ? `Datasets (${q.samples.length + q.hidden.length})` : 'Queries')} />
+      {/* Tabs stay usable in read-only mode; only the fields are disabled. */}
+      <fieldset disabled={!writable} className="space-y-4">
       {tab === 'details' && (
         <>
           <CommonDetails q={q} set={set}>
@@ -208,6 +210,7 @@ export function DbFields({ q, setQ, writable }: { q: DbQuestionInput; setQ: (f: 
           </div>
         </div>
       )}
+      </fieldset>
     </>
   );
 }

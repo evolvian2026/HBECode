@@ -9,13 +9,15 @@ ENV NEXT_PUBLIC_API_URL=${NEXT_PUBLIC_API_URL} NEXT_TELEMETRY_DISABLED=1
 WORKDIR /repo
 COPY pnpm-lock.yaml pnpm-workspace.yaml package.json tsconfig.base.json ./
 COPY packages/shared/package.json packages/shared/
+COPY packages/web-runtime/package.json packages/web-runtime/
 COPY apps/web/package.json apps/web/
 RUN --mount=type=secret,id=extra_ca,required=false \
     if [ -s /run/secrets/extra_ca ]; then export NODE_EXTRA_CA_CERTS=/run/secrets/extra_ca; fi; \
     corepack enable && pnpm install --frozen-lockfile --filter "@hbe/web..." --ignore-scripts
 COPY packages/shared packages/shared
+COPY packages/web-runtime packages/web-runtime
 COPY apps/web apps/web
-RUN corepack enable && pnpm --filter @hbe/shared build && pnpm --filter @hbe/web build
+RUN corepack enable && pnpm --filter @hbe/shared build && pnpm --filter @hbe/web-runtime build && pnpm --filter @hbe/web build
 
 FROM ${REGISTRY}/node:22-bookworm-slim
 WORKDIR /app

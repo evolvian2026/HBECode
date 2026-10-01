@@ -173,6 +173,16 @@ describe('db questions', () => {
     expect(hc.validation.problems.join('\n')).toMatch(/hard-coded sample answers would pass/);
   });
 
+  it('a reference that uses most of the time limit fails validation (wall time, 30% headroom)', async () => {
+    const qid = (await teacher.post('/api/v1/questions', { ...dbQ, title: 'Slow reference' })).json().id;
+    await teacher.post(`/api/v1/questions/${qid}/validate`, {});
+    // dbQ's limit is the default 2000 ms; 1500 ms leaves less than 30% headroom.
+    for (let i = 0; i < 2; i++) await serve((j) => ({ tests: (j as DbJob).datasets.map((d, k) => testRes(d.id, 'AC', { result: count(j as DbJob, sizes[k]!), cpuMs: 0, wallMs: k === 3 ? 1500 : 20 })) }));
+    const v = (await teacher.get(`/api/v1/questions/${qid}`)).json();
+    expect(v.validation.ok).toBe(false);
+    expect(v.validation.problems.join('\n')).toMatch(/slowest dataset took 1500 ms, over 70% of the 2000 ms limit/);
+  });
+
   it('students see the schema, starters and sample expected results, never hidden datasets or solutions', async () => {
     const r = await student.get(`/api/v1/practice/questions/${id}`);
     const v = r.json();

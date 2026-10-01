@@ -13,10 +13,22 @@ const run = promisify(execFile);
  * or an unreachable DB runner is not offered to the API, so jobs never land on an executor that
  * cannot serve them, and the version labels students see match what actually runs their code.
  */
-export async function detectRuntimes(cfg?: ExecutorConfig): Promise<{ available: Capability[]; versions: Record<string, string>; problems: string[] }> {
+export type RunnerCapability = 'db:postgres' | 'db:mysql' | 'db:mongodb';
+
+/** Probe one configured DB runner; resolves to its version label or rejects. */
+export function probeRunner(cfg: ExecutorConfig, cap: RunnerCapability): Promise<string> {
+  const r = dbRunners(cfg);
+  const runner = cap === 'db:postgres' ? r.pg : cap === 'db:mysql' ? r.my : r.mongo;
+  if (!runner) return Promise.reject(new Error('not configured'));
+  return runner.version();
+}
+
+export async function detectRuntimes(cfg?: ExecutorConfig): Promise<{ available: Capability[]; versions: Record<string, string>; problems: string[]; pendingRunners: RunnerCapability[] }> {
   const available: Capability[] = [];
   const versions: Record<string, string> = {};
   const problems: string[] = [];
+  /** Configured runners that did not answer yet (e.g. still starting); main.ts keeps probing them. */
+  const pendingRunners: RunnerCapability[] = [];
   for (const id of RUNTIME_IDS) {
     const spec = RUNTIME_SPECS[id];
     try {
@@ -33,7 +45,7 @@ export async function detectRuntimes(cfg?: ExecutorConfig): Promise<{ available:
       problems.push(`${id}: not installed (${(e as Error).message.split('\n')[0]})`);
     }
   }
-  if (!cfg) return { available, versions, problems };
+  if (!cfg) return { available, versions, problems, pendingRunners };
 
   try {
     accessSync(cfg.chromiumPath, constants.X_OK);
@@ -52,20 +64,20 @@ export async function detectRuntimes(cfg?: ExecutorConfig): Promise<{ available:
   } catch {
     problems.push('pandas: not installed');
   }
-  const r = dbRunners(cfg);
-  const probe = async (cap: Capability, fn: () => Promise<string>) => {
+  const urls: Record<RunnerCapability, string | undefined> = { 'db:postgres': cfg.pgRunnerUrl, 'db:mysql': cfg.mysqlRunnerUrl, 'db:mongodb': cfg.mongoRunnerUrl };
+  const envName: Record<RunnerCapability, string> = { 'db:postgres': 'PG_RUNNER_URL', 'db:mysql': 'MYSQL_RUNNER_URL', 'db:mongodb': 'MONGO_RUNNER_URL' };
+  for (const cap of Object.keys(urls) as RunnerCapability[]) {
+    if (!urls[cap]) {
+      problems.push(`${cap}: ${envName[cap]} not set`);
+      continue;
+    }
     try {
-      versions[cap] = await fn();
+      versions[cap] = await probeRunner(cfg, cap);
       available.push(cap);
     } catch (e) {
       problems.push(`${cap}: runner unreachable (${(e as Error).message.split('\n')[0]})`);
+      pendingRunners.push(cap);
     }
-  };
-  if (r.pg) await probe('db:postgres', () => r.pg!.version());
-  else problems.push('db:postgres: PG_RUNNER_URL not set');
-  if (r.my) await probe('db:mysql', () => r.my!.version());
-  else problems.push('db:mysql: MYSQL_RUNNER_URL not set');
-  if (r.mongo) await probe('db:mongodb', () => r.mongo!.version());
-  else problems.push('db:mongodb: MONGO_RUNNER_URL not set');
-  return { available, versions, problems };
+  }
+  return { available, versions, problems, pendingRunners };
 }

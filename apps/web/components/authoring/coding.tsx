@@ -37,6 +37,8 @@ export function CodingFields({ q, setQ, writable }: { q: CodingQuestionInput; se
   return (
     <>
       <Tabs tabs={['details', 'tests', 'code'] as const} value={tab} onChange={setTab} label={(t) => (t === 'code' ? 'Languages' : t === 'tests' ? 'Tests' : 'Details')} />
+      {/* Tabs stay usable in read-only mode; only the fields are disabled. */}
+      <fieldset disabled={!writable} className="space-y-4">
       {tab === 'details' && (
         <>
           <Field label="Title"><input className="input" value={q.title} onChange={(e) => set('title', e.target.value)} /></Field>
@@ -134,6 +136,7 @@ export function CodingFields({ q, setQ, writable }: { q: CodingQuestionInput; se
           </div>
         </>
       )}
+      </fieldset>
     </>
   );
 }

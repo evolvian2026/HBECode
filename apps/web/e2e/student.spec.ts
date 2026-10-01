@@ -57,7 +57,7 @@ test('student solves a problem: run samples, custom input, submit hidden tests',
   await page.getByRole('button', { name: 'Submit' }).click();
   await expect(page.getByTestId('verdict')).toHaveText('Accepted');
   await expect(page.getByText('Score: 100%')).toBeVisible();
-  await expect(page.getByText('Hidden tests (inputs are not shown)')).toBeVisible();
+  await expect(page.getByText('Hidden tests (details are not shown)')).toBeVisible();
   await expect(page.getByText('#10 AC')).toBeVisible();
   if (shots) await page.screenshot({ path: `${shots}/02-accepted.png`, fullPage: true });
 

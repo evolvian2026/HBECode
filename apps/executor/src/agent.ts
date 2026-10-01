@@ -19,6 +19,13 @@ export class Agent {
     private readonly log: (msg: string, extra?: Record<string, unknown>) => void,
   ) {}
 
+  /** Start offering a capability that became available after startup (a DB runner came up). */
+  addCapability(cap: Capability, version: string): void {
+    if (this.runtimes.includes(cap)) return;
+    this.runtimes.push(cap);
+    this.versions[cap] = version;
+  }
+
   start(): Promise<void[]> {
     return Promise.all(Array.from({ length: this.cfg.slots }, (_, i) => this.slot(i)));
   }
