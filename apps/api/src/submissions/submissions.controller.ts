@@ -63,24 +63,29 @@ export class SubmissionsController {
     const send = (data: unknown) => {
       if (!closed) raw.write(`event: submission\ndata: ${JSON.stringify(data)}\n\n`);
     };
-    let unsubscribe: (() => Promise<void>) | undefined;
+    const sub: { off?: () => Promise<void> } = {};
     const close = async () => {
       if (closed) return;
       closed = true;
       clearInterval(ping);
       clearTimeout(timeout);
-      await unsubscribe?.();
+      await sub.off?.();
       raw.end();
     };
     const ping = setInterval(() => raw.write(': ping\n\n'), 15_000);
     const timeout = setTimeout(() => void close(), SSE_MAX_MS);
     req.raw.on('close', () => void close());
-    unsubscribe = await this.dispatch.subscribe(id, () => {
+    sub.off = await this.dispatch.subscribe(id, () => {
       void this.subs.get(u, id).then((s) => {
         send(s);
         if (s.status === 'done' || s.status === 'failed') void close();
       });
     });
+    if (closed) {
+      // The client went away while we were subscribing.
+      await sub.off();
+      return;
+    }
     send(first);
     if (first.status === 'done' || first.status === 'failed') await close();
   }

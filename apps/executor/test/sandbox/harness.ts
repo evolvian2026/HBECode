@@ -11,7 +11,8 @@ export const DOCKER_FLAGS = [
   '--cap-add', 'SYS_ADMIN', '--cap-add', 'SETUID', '--cap-add', 'SETGID', '--cap-add', 'CHOWN',
   '--cap-add', 'DAC_OVERRIDE', '--cap-add', 'FOWNER', '--cap-add', 'KILL',
   '--security-opt', 'seccomp=unconfined', '--security-opt', 'apparmor=unconfined', '--security-opt', 'systempaths=unconfined',
-  '-v', '/sys/fs/cgroup:/sys/fs/cgroup:rw',
+  // Own cgroup namespace; the agent remounts its (container-scoped) cgroup tree read-write.
+  '--cgroupns', 'private',
 ];
 
 export class Sandbox {

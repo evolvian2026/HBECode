@@ -1,0 +1,22 @@
+# Run database migrations against Supabase (or any Postgres) on demand.
+# Requires repository secrets DATABASE_ADMIN_URL and HBE_APP_DB_PASSWORD.
+name: Migrate database
+on:
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  migrate:
+    runs-on: ubuntu-24.04
+    environment: production
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: 22, cache: pnpm }
+      - run: pnpm install --frozen-lockfile --filter "@hbe/db..."
+      - run: pnpm --filter @hbe/shared build && pnpm --filter @hbe/db build
+      - run: node packages/db/dist/cli/migrate.js
+        env:
+          DATABASE_ADMIN_URL: ${{ secrets.DATABASE_ADMIN_URL }}
+          HBE_APP_DB_PASSWORD: ${{ secrets.HBE_APP_DB_PASSWORD }}

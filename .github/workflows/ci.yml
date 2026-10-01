@@ -1,0 +1,109 @@
+name: CI
+on:
+  push:
+    branches: [main, 'claude/**']
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  checks:
+    name: Lint, typecheck, unit tests
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: 22, cache: pnpm }
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm --filter @hbe/shared build && pnpm --filter @hbe/db build
+      - run: pnpm lint
+      - run: pnpm --filter @hbe/api exec tsc -p tsconfig.json --noEmit
+      - run: pnpm --filter @hbe/executor typecheck
+      - run: pnpm --filter @hbe/shared test
+      - run: pnpm --filter @hbe/executor test
+      - name: Web build (static export + CSP)
+        run: pnpm --filter @hbe/web build
+
+  integration:
+    name: RLS + API integration tests
+    runs-on: ubuntu-24.04
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env: { POSTGRES_PASSWORD: postgres }
+        ports: ['5432:5432']
+        options: --health-cmd pg_isready --health-interval 2s --health-retries 30
+      redis:
+        image: redis:7-alpine
+        ports: ['6379:6379']
+        options: --health-cmd "redis-cli ping" --health-interval 2s --health-retries 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: 22, cache: pnpm }
+      - run: pnpm install --frozen-lockfile
+      - name: Non-superuser owner role (mirrors Supabase)
+        run: PGPASSWORD=postgres psql -h 127.0.0.1 -U postgres -c "CREATE ROLE hbe_owner LOGIN CREATEROLE CREATEDB PASSWORD 'hbe_owner'"
+      - run: pnpm --filter @hbe/shared build && pnpm --filter @hbe/db build && pnpm --filter @hbe/api build
+      - run: pnpm --filter @hbe/db test
+      - run: pnpm --filter @hbe/api test
+
+  sandbox:
+    name: Executor image + sandbox escape suite
+    runs-on: ubuntu-24.04
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env: { POSTGRES_PASSWORD: postgres }
+        ports: ['5432:5432']
+        options: --health-cmd pg_isready --health-interval 2s --health-retries 30
+      redis:
+        image: redis:7-alpine
+        ports: ['6379:6379']
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: 22, cache: pnpm }
+      - run: pnpm install --frozen-lockfile
+      - uses: docker/setup-buildx-action@v3
+      - name: Build executor image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: apps/executor/Dockerfile
+          tags: hbe-executor:dev
+          load: true
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+      - name: Scan image (Trivy)
+        uses: aquasecurity/trivy-action@0.28.0
+        with:
+          image-ref: hbe-executor:dev
+          severity: CRITICAL
+          ignore-unfixed: true
+          exit-code: '0' # report only until the baseline is triaged
+      - run: pnpm --filter @hbe/shared build && pnpm --filter @hbe/db build && pnpm --filter @hbe/api build
+      - name: Sandbox tests (8 languages + escape attempts)
+        run: pnpm --filter @hbe/executor test:sandbox
+      - name: API + real executor end-to-end (latency report)
+        run: |
+          PGPASSWORD=postgres psql -h 127.0.0.1 -U postgres -c "CREATE ROLE hbe_owner LOGIN CREATEROLE CREATEDB PASSWORD 'hbe_owner'"
+          pnpm --filter @hbe/api test:e2e
+          cat /tmp/hbe-e2e-latency.json >> "$GITHUB_STEP_SUMMARY"
+
+  secrets-scan:
+    name: Secret scan
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+        with: { fetch-depth: 0 }
+      - uses: gitleaks/gitleaks-action@v2
+        env: { GITHUB_TOKEN: '${{ secrets.GITHUB_TOKEN }}' }

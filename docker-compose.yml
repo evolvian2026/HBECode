@@ -1,0 +1,106 @@
+# Local development stack: Postgres, Redis, migrations, API, executor (sandbox), web.
+#   cp .env.example .env    (optional: change passwords)
+#   docker compose up --build
+#   docker compose run --rm seed     (creates the admin/demo accounts and queues seed questions)
+# Web: http://localhost:3000   API: http://localhost:4000
+#
+# Ports are bound to 127.0.0.1 only. The executor needs extra privileges to build sandboxes
+# (see docs/deployment.md#executor); every submission still runs as uid 65534 inside nsjail.
+name: hbecode
+
+x-build: &build
+  context: .
+  secrets: [extra_ca]
+
+services:
+  postgres:
+    image: mirror.gcr.io/library/postgres:16-alpine
+    environment:
+      POSTGRES_USER: hbe_owner
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-hbe_owner_dev}
+      POSTGRES_DB: hbe
+    ports: ['127.0.0.1:5432:5432']
+    volumes: [pgdata:/var/lib/postgresql/data]
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U hbe_owner -d hbe']
+      interval: 2s
+      retries: 30
+
+  redis:
+    image: mirror.gcr.io/library/redis:7-alpine
+    command: ['redis-server', '--appendonly', 'no', '--maxmemory-policy', 'noeviction']
+    ports: ['127.0.0.1:6379:6379']
+    healthcheck:
+      test: ['CMD', 'redis-cli', 'ping']
+      interval: 2s
+      retries: 30
+
+  migrate:
+    build: { <<: *build, dockerfile: apps/api/Dockerfile }
+    image: hbe-api:dev
+    command: ['node', 'node_modules/@hbe/db/dist/cli/migrate.js']
+    environment:
+      DATABASE_ADMIN_URL: postgres://hbe_owner:${POSTGRES_PASSWORD:-hbe_owner_dev}@postgres:5432/hbe
+      HBE_APP_DB_PASSWORD: ${HBE_APP_DB_PASSWORD:-hbe_app_dev_password}
+    depends_on:
+      postgres: { condition: service_healthy }
+
+  api:
+    image: hbe-api:dev
+    environment: &api-env
+      NODE_ENV: development
+      DATABASE_URL: postgres://hbe_app:${HBE_APP_DB_PASSWORD:-hbe_app_dev_password}@postgres:5432/hbe
+      REDIS_URL: redis://redis:6379
+      WEB_ORIGINS: http://localhost:3000
+      WEB_URL: http://localhost:3000
+      EXECUTOR_TOKENS: ${EXECUTOR_TOKEN:-dev-executor-token-change-me-0123456789}
+      JWT_PRIVATE_KEY: ${JWT_PRIVATE_KEY:-}
+      MFA_ENCRYPTION_KEY: ${MFA_ENCRYPTION_KEY:-}
+      LOG_LEVEL: info
+    ports: ['127.0.0.1:4000:4000']
+    depends_on:
+      migrate: { condition: service_completed_successfully }
+      redis: { condition: service_healthy }
+
+  seed:
+    image: hbe-api:dev
+    profiles: [tools]
+    command: ['node', 'dist/cli/seed.js']
+    environment:
+      <<: *api-env
+      SEED_ADMIN_EMAIL: ${SEED_ADMIN_EMAIL:-admin@hbecode.local}
+      SEED_ADMIN_PASSWORD: ${SEED_ADMIN_PASSWORD:-admin-password-dev-1}
+      SEED_DEMO_PASSWORD: ${SEED_DEMO_PASSWORD:-demo-password-123}
+    depends_on:
+      migrate: { condition: service_completed_successfully }
+
+  executor:
+    build: { <<: *build, dockerfile: apps/executor/Dockerfile }
+    image: hbe-executor:dev
+    environment:
+      EXECUTOR_API_URL: http://api:4000
+      EXECUTOR_TOKEN: ${EXECUTOR_TOKEN:-dev-executor-token-change-me-0123456789}
+      EXECUTOR_ID: local-1
+      EXECUTOR_SLOTS: 2
+    cap_drop: [ALL]
+    cap_add: [SYS_ADMIN, SETUID, SETGID, CHOWN, DAC_OVERRIDE, FOWNER, KILL]
+    security_opt: ['seccomp=unconfined', 'apparmor=unconfined', 'systempaths=unconfined']
+    cgroup: private
+    depends_on: [api]
+    restart: unless-stopped
+
+  web:
+    build:
+      <<: *build
+      dockerfile: apps/web/Dockerfile
+      args: { NEXT_PUBLIC_API_URL: 'http://localhost:4000' }
+    image: hbe-web:dev
+    ports: ['127.0.0.1:3000:3000']
+
+secrets:
+  # Only needed behind a TLS-intercepting proxy; an empty file is ignored.
+  extra_ca:
+    file: ${EXTRA_CA_FILE:-./.empty-ca}
+
+volumes:
+  pgdata:

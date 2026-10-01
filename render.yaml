@@ -1,0 +1,79 @@
+# Render Blueprint for the pilot (10–20 users). See docs/deployment.md.
+# Region is fixed at creation: Singapore is the closest Render region to India.
+# Secrets marked `sync: false` are entered in the Render dashboard, never committed.
+services:
+  - type: web
+    name: hbe-api
+    runtime: node
+    plan: free
+    region: singapore
+    buildCommand: corepack enable && pnpm install --frozen-lockfile && pnpm --filter "@hbe/api..." build
+    startCommand: node --enable-source-maps apps/api/dist/main.js
+    healthCheckPath: /healthz
+    autoDeploy: true
+    envVars:
+      - key: NODE_VERSION
+        value: '22'
+      - key: NODE_ENV
+        value: production
+      - key: TRUST_PROXY
+        value: 'true'
+      - key: DATABASE_URL # Supabase pooler, role hbe_app (docs/deployment.md §2)
+        sync: false
+      - key: DATABASE_POOL_SIZE
+        value: '5'
+      - key: REDIS_URL
+        fromService:
+          type: keyvalue
+          name: hbe-kv
+          property: connectionString
+      - key: WEB_ORIGINS # e.g. https://app.yourdomain.com
+        sync: false
+      - key: WEB_URL # e.g. https://app.yourdomain.com
+        sync: false
+      - key: JWT_PRIVATE_KEY
+        sync: false
+      - key: MFA_ENCRYPTION_KEY
+        sync: false
+      - key: EXECUTOR_TOKENS
+        sync: false
+
+  - type: web
+    name: hbe-web
+    runtime: static
+    buildCommand: corepack enable && pnpm install --frozen-lockfile && pnpm --filter "@hbe/web..." build
+    staticPublishPath: apps/web/out
+    envVars:
+      - key: NODE_VERSION
+        value: '22'
+      - key: NEXT_PUBLIC_API_URL # e.g. https://api.yourdomain.com
+        sync: false
+    headers:
+      - path: /*
+        name: X-Frame-Options
+        value: DENY
+      - path: /*
+        name: Content-Security-Policy
+        value: "frame-ancestors 'none'"
+      - path: /*
+        name: X-Content-Type-Options
+        value: nosniff
+      - path: /*
+        name: Referrer-Policy
+        value: strict-origin-when-cross-origin
+      - path: /*
+        name: Permissions-Policy
+        value: camera=(self), microphone=(), geolocation=(), payment=()
+      - path: /*
+        name: Strict-Transport-Security
+        value: max-age=31536000; includeSubDomains
+      - path: /monaco/*
+        name: Cache-Control
+        value: public, max-age=604800, immutable
+
+  - type: keyvalue
+    name: hbe-kv
+    plan: free
+    region: singapore
+    maxmemoryPolicy: noeviction
+    ipAllowList: [] # internal network only: not reachable from the internet

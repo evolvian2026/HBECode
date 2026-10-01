@@ -19,7 +19,6 @@
     "build": "tsc -p tsconfig.json",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "migrate": "tsx src/cli/migrate.ts",
-    
     "test": "vitest run"
   },
   "dependencies": {
@@ -29,5 +28,9 @@
   },
   "devDependencies": {
     "@types/pg": "^8.15.0"
-  }
+  },
+  "files": [
+    "dist",
+    "migrations"
+  ]
 }

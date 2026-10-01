@@ -18,7 +18,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
  && rm -rf /var/lib/apt/lists/*
 # Optional build secret `extra_ca`: extra CA bundle for TLS-intercepting build networks.
 RUN --mount=type=secret,id=extra_ca,required=false \
-    if [ -f /run/secrets/extra_ca ]; then export GIT_SSL_CAINFO=/run/secrets/extra_ca; fi; \
+    if [ -s /run/secrets/extra_ca ]; then export GIT_SSL_CAINFO=/run/secrets/extra_ca; fi; \
     git clone --depth 1 --branch "${NSJAIL_REF}" https://github.com/google/nsjail.git /src/nsjail \
  && make -C /src/nsjail -j"$(nproc)" && strip /src/nsjail/nsjail
 COPY apps/executor/native/hbe-run.c /src/hbe-run.c
@@ -31,7 +31,7 @@ COPY pnpm-lock.yaml pnpm-workspace.yaml package.json tsconfig.base.json ./
 COPY packages/shared/package.json packages/shared/
 COPY apps/executor/package.json apps/executor/
 RUN --mount=type=secret,id=extra_ca,required=false \
-    if [ -f /run/secrets/extra_ca ]; then export NODE_EXTRA_CA_CERTS=/run/secrets/extra_ca; fi; \
+    if [ -s /run/secrets/extra_ca ]; then export NODE_EXTRA_CA_CERTS=/run/secrets/extra_ca; fi; \
     corepack enable && pnpm install --frozen-lockfile --filter @hbe/executor... --ignore-scripts
 COPY packages/shared packages/shared
 COPY apps/executor apps/executor
