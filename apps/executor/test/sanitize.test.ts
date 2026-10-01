@@ -34,6 +34,13 @@ describe('sanitizeOutput', () => {
     expect(out).not.toContain('main.c');
   });
 
+  it('remaps gcc excerpt gutters and bare file mentions to the student file', () => {
+    const out = sanitizeOutput("main.c: In function ‘add’:\nmain.c:3:14: error: 'c' undeclared\n    3 |   return a + c;\n      |              ^\nmain.c: At top level:", map);
+    expect(out).not.toContain('main.c');
+    expect(out).toContain('solution.c: In function ‘add’:');
+    expect(out).toContain('    2 |   return a + c;');
+  });
+
   it('drops diagnostics that point into the driver and never echoes driver code', () => {
     const raw = [
       "main.c:3:14: error: 'c' undeclared",

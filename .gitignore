@@ -11,3 +11,5 @@ apps/web/public/monaco/
 playwright-report/
 test-results/
 .turbo/
+apps/web/next-env.d.ts
+apps/web/tsconfig.tsbuildinfo

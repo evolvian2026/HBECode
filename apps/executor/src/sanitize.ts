@@ -61,7 +61,7 @@ export function sanitizeOutput(raw: string, map: SourceMap, maxBytes = 16 * 1024
       cur = { lines: [], driver: false };
     }
     let touchesDriver = false;
-    const rewritten = line.replace(refRe, (m, f1, l1, f2, l2, f3, l3, c3) => {
+    let rewritten = line.replace(refRe, (m, f1, l1, f2, l2, f3, l3, c3) => {
       const file = f1 ?? f2 ?? f3;
       const ln = Number(l1 ?? l2 ?? l3);
       const r = classify(file, ln);
@@ -73,6 +73,19 @@ export function sanitizeOutput(raw: string, map: SourceMap, maxBytes = 16 * 1024
       if (f3) return `${r.file}(${r.line},${c3})`;
       return `${r.file}:${r.line}`;
     });
+    // Source-excerpt gutters ("  12 | code" in gcc/rustc) carry merged-file line numbers.
+    if (spec.layout === 'concat') {
+      rewritten = rewritten.replace(/^(\s*)(\d+)(\s+\|)/, (m, pre: string, n: string, bar: string) => {
+        const rel = Number(n) - map.studentStart + 1;
+        if (rel < 1 || rel > map.studentLines) {
+          touchesDriver = true;
+          return m;
+        }
+        return `${pre}${String(rel).padStart(n.length)}${bar}`;
+      });
+    }
+    // Bare mentions such as "main.c: In function ‘f’:" name the merged file.
+    rewritten = rewritten.replace(new RegExp(`(?:/box/)?\\b${escapeRe(spec.mainFile)}\\b(?!:\\d)`, 'g'), spec.layout === 'concat' ? spec.displayFile : spec.mainFile);
     if (touchesDriver) cur.driver = true;
     cur.lines.push(rewritten);
   }
