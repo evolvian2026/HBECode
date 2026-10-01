@@ -1,0 +1,19 @@
+{
+  "name": "@hbe/executor",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "start": "node dist/main.js",
+    "test": "vitest run",
+    "test:sandbox": "vitest run --config vitest.sandbox.config.ts"
+  },
+  "dependencies": {
+    "@hbe/shared": "workspace:*"
+  },
+  "devDependencies": {
+    "esbuild": "0.28.2"
+  }
+}

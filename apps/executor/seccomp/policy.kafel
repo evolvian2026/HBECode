@@ -1,0 +1,33 @@
+/*
+ * Seccomp policy for every jailed process (compilers and student programs).
+ * Denylist of syscalls that allow privilege escalation, kernel attack surface or
+ * namespace/mount manipulation; layered on top of user/pid/mount/net/ipc/uts namespaces,
+ * uid 65534, no_new_privs and cgroup limits. See docs/threat-model.md (E1).
+ * Names must exist in kafel's tables for both x86_64 and aarch64 (iopl/ioperm are x86-only
+ * and need CAP_SYS_RAWIO, which jailed processes never have).
+ */
+#define CLONE_NS_FLAGS 0x7E020000
+
+POLICY hbe_deny {
+  KILL {
+    ptrace, process_vm_readv, process_vm_writev,
+    kexec_load, kexec_file_load, init_module, finit_module, delete_module,
+    bpf, perf_event_open, userfaultfd,
+    open_by_handle_at, name_to_handle_at,
+    mount, umount, pivot_root, chroot,
+    mount_setattr, move_mount, open_tree, fsopen, fsconfig, fsmount, fspick,
+    swapon, swapoff, reboot, acct, quotactl,
+    keyctl, add_key, request_key,
+    unshare, setns,
+    lookup_dcookie, fanotify_init, syslog, vhangup,
+    settimeofday, clock_settime, clock_adjtime, adjtimex,
+    clone(flags, stack, ptid, ctid, tls) { (flags & CLONE_NS_FLAGS) != 0 }
+  },
+  /*
+   * ENOSYS instead of KILL for syscalls that runtimes probe and gracefully fall back from:
+   * clone3 (a struct pointer BPF cannot inspect; glibc falls back to clone) and io_uring
+   * (libuv in Node 22 probes it at startup and falls back to its thread pool).
+   */
+  ERRNO(38) { clone3, io_uring_setup, io_uring_enter, io_uring_register }
+}
+USE hbe_deny DEFAULT ALLOW
