@@ -67,6 +67,7 @@ export const refreshTokens = hbe.table('refresh_tokens', {
   familyId: uuid('family_id').notNull(),
   tokenHash: text('token_hash').notNull(),
   tenantId: uuid('tenant_id'),
+  mfa: boolean('mfa').notNull().default(false),
   expiresAt: ts('expires_at').notNull(),
   rotatedAt: ts('rotated_at'),
   revokedAt: ts('revoked_at'),
@@ -121,8 +122,13 @@ export const questions = hbe.table('questions', {
 });
 
 export interface ValidationReport {
+  runId: string;
   ok: boolean;
-  checkedAt: string;
+  pending: boolean;
+  publishIfValid: boolean;
+  requestedAt: string;
+  checkedAt: string | null;
+  expected: string[];
   problems: string[];
   /** runtime -> per-test verdict summary */
   runtimes: Record<string, { ok: boolean; maxCpuMs: number; limitMs: number; verdicts: string[]; compileOutput?: string }>;
@@ -210,6 +216,7 @@ export const submissions = hbe.table('submissions', {
   dispatchCount: integer('dispatch_count').notNull().default(0),
   leaseUntil: ts('lease_until'),
   executorId: text('executor_id'),
+  validationRun: uuid('validation_run'),
   createdAt: ts('created_at').notNull().defaultNow(),
   startedAt: ts('started_at'),
   finishedAt: ts('finished_at'),
