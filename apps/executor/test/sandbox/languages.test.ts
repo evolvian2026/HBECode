@@ -63,6 +63,8 @@ describe.each(RUNTIME_IDS)('%s', (rt) => {
 it('every pinned toolchain version matches what is installed', async () => {
   const out = await sb.sh('/opt/node/bin/node -e "import(\'/opt/hbe/agent/dist/cli-versions.js\')"');
   const v = JSON.parse(out) as { available: string[]; problems: string[] };
-  expect(v.problems).toEqual([]);
-  expect(v.available.sort()).toEqual([...RUNTIME_IDS].sort());
+  // This suite starts no DB runner containers, so only those may be reported as unconfigured.
+  expect(v.problems.filter((p) => !/^db:(postgres|mysql|mongodb): [A-Z_]+_RUNNER_URL not set$/.test(p))).toEqual([]);
+  expect(v.available.filter((c) => !c.includes(':')).sort()).toEqual([...RUNTIME_IDS].sort());
+  expect(v.available).toEqual(expect.arrayContaining(['web:html', 'web:react', 'db:pandas']));
 });

@@ -7,8 +7,11 @@ import { get } from '@/lib/api';
 import { useRequireUser, useSession } from '@/lib/session';
 import { Badge, Difficulty, ErrorBox, Page, Spinner } from '@/components/ui';
 
+const TYPE_LABEL: Record<string, string> = { coding: 'Coding', web: 'Web', db: 'Database' };
+
 interface Item {
   id: string;
+  type: string;
   title: string;
   difficulty: string;
   tags: string[];
@@ -49,7 +52,13 @@ export default function Questions() {
 
   if (!user) return null;
   return (
-    <Page title="Question bank" actions={can('question:write') && <Link className="btn-primary" href="/questions/edit">New question</Link>}>
+    <Page title="Question bank" actions={can('question:write') && (
+        <>
+          <Link className="btn-primary" href="/questions/edit">New question</Link>
+          <Link className="btn-secondary" href="/questions/edit?type=web">New web question</Link>
+          <Link className="btn-secondary" href="/questions/edit?type=db">New database question</Link>
+        </>
+      )}>
       <div className="mb-4 flex flex-wrap gap-2">
         <input className="input max-w-xs" placeholder="Search by title" aria-label="Search" value={filters.q} onChange={(e) => setFilters({ ...filters, q: e.target.value })} />
         <select className="input w-auto" aria-label="Difficulty" value={filters.difficulty} onChange={(e) => setFilters({ ...filters, difficulty: e.target.value })}>
@@ -64,7 +73,7 @@ export default function Questions() {
         <div className="overflow-x-auto rounded-lg border border-slate-200 dark:border-slate-800">
           <table className="w-full text-left text-sm">
             <thead className="bg-slate-50 text-xs text-slate-500 dark:bg-slate-900">
-              <tr><th className="px-3 py-2">Title</th><th className="px-3 py-2">Difficulty</th><th className="px-3 py-2">Status</th><th className="px-3 py-2">Version</th><th className="px-3 py-2">Updated</th></tr>
+              <tr><th className="px-3 py-2">Title</th><th className="px-3 py-2">Type</th><th className="px-3 py-2">Difficulty</th><th className="px-3 py-2">Status</th><th className="px-3 py-2">Version</th><th className="px-3 py-2">Updated</th></tr>
             </thead>
             <tbody className="divide-y divide-slate-200 dark:divide-slate-800">
               {data.items.map((i) => (
@@ -73,13 +82,14 @@ export default function Questions() {
                     <Link href={`/questions/edit?id=${i.id}`} className="font-medium hover:underline">{i.title}</Link>
                     <div className="mt-0.5 flex gap-1">{i.global && <Badge tone="blue">global</Badge>}{i.isPractice && <Badge>practice</Badge>}{i.tags.map((t) => <span key={t} className="text-xs text-slate-500">#{t}</span>)}</div>
                   </td>
+                  <td className="px-3 py-2 text-xs text-slate-600 dark:text-slate-400">{TYPE_LABEL[i.type] ?? i.type}</td>
                   <td className="px-3 py-2"><Difficulty value={i.difficulty} /></td>
                   <td className="px-3 py-2"><Badge tone={STATUS_TONE[i.status]}>{i.status}</Badge></td>
                   <td className="px-3 py-2">v{i.versionNo}</td>
                   <td className="px-3 py-2 text-slate-500">{new Date(i.updatedAt).toLocaleString()}</td>
                 </tr>
               ))}
-              {data.items.length === 0 && <tr><td colSpan={5} className="px-3 py-6 text-center text-slate-500">No questions match.</td></tr>}
+              {data.items.length === 0 && <tr><td colSpan={6} className="px-3 py-6 text-center text-slate-500">No questions match.</td></tr>}
             </tbody>
           </table>
         </div>

@@ -8,6 +8,7 @@ coverage/
 .env.*
 !.env.example
 apps/web/public/monaco/
+apps/web/public/vendor/
 playwright-report/
 test-results/
 .turbo/

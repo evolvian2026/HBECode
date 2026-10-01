@@ -10,7 +10,7 @@
 import 'reflect-metadata';
 import { NestFactory } from '@nestjs/core';
 import { memberships, questions, questionVersions, tenants, users } from '@hbe/db';
-import { sumArray } from '@hbe/db/seed';
+import { customerTotals, monthlyRevenue, profileCard, shoppingCart, sumArray, todoList, topEarner } from '@hbe/db/seed';
 import { and, eq, isNull } from 'drizzle-orm';
 import { AppModule } from '../app.module.js';
 import { PasswordService } from '../auth/password.service.js';
@@ -18,7 +18,7 @@ import type { AuthUser } from '../common/decorators.js';
 import { DbService } from '../infra/infra.module.js';
 import { QuestionsService } from '../questions/questions.service.js';
 
-const SEED_QUESTIONS = [sumArray];
+const SEED_QUESTIONS = [sumArray, profileCard, todoList, shoppingCart, topEarner, customerTotals, monthlyRevenue];
 
 const adminEmail = process.env.SEED_ADMIN_EMAIL?.trim().toLowerCase();
 const adminPassword = process.env.SEED_ADMIN_PASSWORD;

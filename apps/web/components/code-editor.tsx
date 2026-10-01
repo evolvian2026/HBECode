@@ -15,13 +15,16 @@ export interface CodeEditorProps {
   readOnly?: boolean;
   height?: string | number;
   ariaLabel?: string;
+  /** Monaco model path: one model (and undo history) per file in multi-file editors. */
+  path?: string;
 }
 
-export function CodeEditor({ value, language, onChange, theme = 'light', fontSize = 14, readOnly = false, height = '100%', ariaLabel = 'Code editor' }: CodeEditorProps) {
+export function CodeEditor({ value, language, onChange, theme = 'light', fontSize = 14, readOnly = false, height = '100%', ariaLabel = 'Code editor', path }: CodeEditorProps) {
   const ref = useRef<Parameters<OnMount>[0] | null>(null);
   return (
     <Editor
       height={height}
+      path={path}
       language={language}
       value={value}
       theme={theme === 'dark' ? 'vs-dark' : 'vs'}

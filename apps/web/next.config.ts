@@ -10,6 +10,6 @@ const config: NextConfig = {
   reactStrictMode: true,
   poweredByHeader: false,
   images: { unoptimized: true },
-  transpilePackages: ['@hbe/shared'],
+  transpilePackages: ['@hbe/shared', '@hbe/web-runtime'],
 };
 export default config;

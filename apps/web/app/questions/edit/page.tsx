@@ -1,11 +1,13 @@
 'use client';
 
-import { RUNTIMES, RUNTIME_IDS, REQUIRED_RUNTIMES, publishProblems, type CodingQuestionInput, type RuntimeId } from '@hbe/shared';
+import { DIALECT_INFO, RUNTIMES, RUNTIME_IDS, questionProblems, type QuestionInput, type RuntimeId } from '@hbe/shared';
 import Link from 'next/link';
 import { useEffect, useMemo, useState } from 'react';
 import { del, get, post, put } from '@/lib/api';
 import { useRequireUser, useSession } from '@/lib/session';
-import { CodeEditor } from '@/components/code-editor';
+import { CodingFields, emptyCoding } from '@/components/authoring/coding';
+import { DbFields, emptyDb } from '@/components/authoring/db';
+import { emptyWeb, WebFields } from '@/components/authoring/web';
 import { Badge, ErrorBox, Page, Spinner } from '@/components/ui';
 
 interface Detail {
@@ -23,48 +25,35 @@ interface Detail {
     runtimes: Record<string, { ok: boolean; maxCpuMs: number; limitMs: number; verdicts: string[]; compileOutput?: string }>;
   };
   problems: string[];
-  question: CodingQuestionInput;
+  question: QuestionInput;
 }
 
-const empty = (): CodingQuestionInput => ({
-  title: '',
-  statement: '',
-  constraints: '',
-  inputFormat: '',
-  outputFormat: '',
-  difficulty: 'easy',
-  tags: [],
-  timeComplexity: '',
-  spaceComplexity: '',
-  baseTimeLimitMs: 1000,
-  memoryLimitMb: 256,
-  compare: { mode: 'trim_trailing' },
-  isPractice: true,
-  samples: [
-    { input: '', output: '', explanation: '' },
-    { input: '', output: '', explanation: '' },
-  ],
-  hidden: [],
-  templates: {},
-});
+function emptyFor(type: string | null): QuestionInput {
+  if (type === 'web' || type === 'react') return emptyWeb(type === 'react' ? 'react' : 'html');
+  if (type === 'db') return emptyDb();
+  return emptyCoding();
+}
 
-const Field = ({ label, children, hint }: { label: string; children: React.ReactNode; hint?: string }) => (
-  <div>
-    <label className="label">{label}</label>
-    {children}
-    {hint && <p className="mt-1 text-xs text-slate-500">{hint}</p>}
-  </div>
-);
+const TITLES = { coding: 'New coding question', web: 'New web question', db: 'New database question' } as const;
+
+/** Validation rows: coding runtimes, DB dialects, web reference/starter. */
+function targetLabel(key: string): string {
+  if (key in RUNTIMES) return RUNTIMES[key as RuntimeId].label;
+  if (key in DIALECT_INFO) return DIALECT_INFO[key as keyof typeof DIALECT_INFO].label;
+  if (key.endsWith(':starter')) return 'Starter files (must fail a hidden check)';
+  return `Reference (${key === 'react' ? 'React' : 'HTML'})`;
+}
+const targetOrder = (k: string) => {
+  const i = RUNTIME_IDS.indexOf(k as RuntimeId);
+  return i >= 0 ? i : k.endsWith(':starter') ? 100 : 50;
+};
 
 export default function EditQuestion() {
   const user = useRequireUser();
   const { can } = useSession();
   const [id, setId] = useState<string | null>(null);
-  const [q, setQ] = useState<CodingQuestionInput>(empty());
+  const [q, setQ] = useState<QuestionInput>(emptyCoding);
   const [detail, setDetail] = useState<Detail | null>(null);
-  const [tab, setTab] = useState<'details' | 'tests' | 'code'>('details');
-  const [lang, setLang] = useState<RuntimeId>('python');
-  const [part, setPart] = useState<'stub' | 'driver' | 'solution'>('stub');
   const [error, setError] = useState<unknown>(null);
   const [notice, setNotice] = useState('');
   const [busy, setBusy] = useState(false);
@@ -78,9 +67,11 @@ export default function EditQuestion() {
   };
 
   useEffect(() => {
-    const qid = new URLSearchParams(location.search).get('id');
+    const params = new URLSearchParams(location.search);
+    const qid = params.get('id');
     setId(qid);
-    if (qid && user) load(qid).catch(setError);
+    if (!qid) setQ(emptyFor(params.get('type')));
+    else if (user) load(qid).catch(setError);
   }, [user]);
 
   // Poll while the sandbox validates the reference solutions.
@@ -90,8 +81,9 @@ export default function EditQuestion() {
     return () => clearInterval(t);
   }, [id, detail?.validation?.pending]);
 
-  const problems = useMemo(() => publishProblems(q), [q]);
-  const set = <K extends keyof CodingQuestionInput>(k: K, v: CodingQuestionInput[K]) => setQ((x) => ({ ...x, [k]: v }));
+  const problems = useMemo(() => questionProblems(q), [q]);
+  // The type never changes while editing, so each type-specific editor updates its own shape.
+  const narrow = <T extends QuestionInput>() => (f: (x: T) => T) => setQ((x) => f(x as T));
 
   const save = async (): Promise<string | null> => {
     setBusy(true);
@@ -131,12 +123,11 @@ export default function EditQuestion() {
 
   if (!user) return null;
   if (id && !detail && !error) return <div className="p-8 text-center"><Spinner /></div>;
-  const tpl = q.templates[lang] ?? { stub: '', driver: '', solution: '' };
   const v = detail?.validation;
 
   return (
     <Page
-      title={id ? q.title || 'Untitled' : 'New coding question'}
+      title={id ? q.title || 'Untitled' : TITLES[q.type]}
       actions={
         writable && (
           <>
@@ -171,110 +162,13 @@ export default function EditQuestion() {
 
       <div className="grid gap-4 lg:grid-cols-[1fr_300px]">
         <div>
-          <div className="mb-3 flex gap-1 border-b border-slate-200 text-sm dark:border-slate-800" role="tablist">
-            {(['details', 'tests', 'code'] as const).map((t) => (
-              <button key={t} role="tab" aria-selected={tab === t} className={`px-3 py-1.5 capitalize ${tab === t ? 'border-b-2 border-brand-600 font-medium' : 'text-slate-500'}`} onClick={() => setTab(t)}>
-                {t === 'code' ? 'Languages' : t}
-              </button>
-            ))}
-          </div>
           <fieldset disabled={!writable} className="space-y-4">
-            {tab === 'details' && (
-              <>
-                <Field label="Title"><input className="input" value={q.title} onChange={(e) => set('title', e.target.value)} /></Field>
-                <Field label="Description (Markdown)"><textarea className="input h-40 font-mono text-xs" value={q.statement} onChange={(e) => set('statement', e.target.value)} /></Field>
-                <div className="grid gap-4 md:grid-cols-2">
-                  <Field label="Input format"><textarea className="input h-24 font-mono text-xs" value={q.inputFormat} onChange={(e) => set('inputFormat', e.target.value)} /></Field>
-                  <Field label="Output format"><textarea className="input h-24 font-mono text-xs" value={q.outputFormat} onChange={(e) => set('outputFormat', e.target.value)} /></Field>
-                </div>
-                <Field label="Constraints"><textarea className="input h-20 font-mono text-xs" value={q.constraints} onChange={(e) => set('constraints', e.target.value)} /></Field>
-                <div className="grid gap-4 md:grid-cols-4">
-                  <Field label="Difficulty">
-                    <select className="input" value={q.difficulty} onChange={(e) => set('difficulty', e.target.value as CodingQuestionInput['difficulty'])}>
-                      <option value="easy">Easy</option><option value="moderate">Moderate</option><option value="hard">Hard</option>
-                    </select>
-                  </Field>
-                  <Field label="Tags (comma-separated)"><input className="input" value={q.tags.join(', ')} onChange={(e) => set('tags', e.target.value.split(',').map((s) => s.trim().toLowerCase()).filter(Boolean))} /></Field>
-                  <Field label="Time complexity"><input className="input" placeholder="O(n log n)" value={q.timeComplexity} onChange={(e) => set('timeComplexity', e.target.value)} /></Field>
-                  <Field label="Space complexity"><input className="input" placeholder="O(n)" value={q.spaceComplexity} onChange={(e) => set('spaceComplexity', e.target.value)} /></Field>
-                </div>
-                <div className="grid gap-4 md:grid-cols-4">
-                  <Field label="Base time limit (ms)" hint="C/C++ ×1, Go/Rust ×1.5, Java/C# ×2, JS ×2.5, Python ×3">
-                    <input className="input" type="number" min={100} max={10000} value={q.baseTimeLimitMs} onChange={(e) => set('baseTimeLimitMs', Number(e.target.value))} />
-                  </Field>
-                  <Field label="Memory limit (MB)"><input className="input" type="number" min={32} max={1024} value={q.memoryLimitMb} onChange={(e) => set('memoryLimitMb', Number(e.target.value))} /></Field>
-                  <Field label="Output comparison">
-                    <select className="input" value={q.compare.mode} onChange={(e) => set('compare', { mode: e.target.value as CodingQuestionInput['compare']['mode'], epsilon: e.target.value === 'float' ? (q.compare.epsilon ?? 1e-6) : undefined })}>
-                      <option value="exact">Exact</option><option value="trim_trailing">Ignore trailing whitespace</option><option value="unordered_lines">Unordered lines</option><option value="float">Float tolerance</option>
-                    </select>
-                  </Field>
-                  {q.compare.mode === 'float' && <Field label="Epsilon"><input className="input" type="number" step="any" value={q.compare.epsilon ?? 1e-6} onChange={(e) => set('compare', { mode: 'float', epsilon: Number(e.target.value) })} /></Field>}
-                </div>
-                <label className="flex items-center gap-2 text-sm"><input type="checkbox" checked={q.isPractice} onChange={(e) => set('isPractice', e.target.checked)} /> Available in practice mode</label>
-              </>
-            )}
-
-            {tab === 'tests' && (
-              <>
-                <h3 className="font-medium">Sample tests (exactly 2, shown to students)</h3>
-                {q.samples.map((s, i) => (
-                  <div key={i} className="card grid gap-2 md:grid-cols-3">
-                    <Field label={`Sample ${i + 1} input`}><textarea className="input h-24 font-mono text-xs" value={s.input} onChange={(e) => set('samples', q.samples.map((x, j) => (j === i ? { ...x, input: e.target.value } : x)))} /></Field>
-                    <Field label="Expected output"><textarea className="input h-24 font-mono text-xs" value={s.output} onChange={(e) => set('samples', q.samples.map((x, j) => (j === i ? { ...x, output: e.target.value } : x)))} /></Field>
-                    <Field label="Explanation"><textarea className="input h-24 text-xs" value={s.explanation} onChange={(e) => set('samples', q.samples.map((x, j) => (j === i ? { ...x, explanation: e.target.value } : x)))} /></Field>
-                  </div>
-                ))}
-                <div className="flex items-center gap-2">
-                  <h3 className="font-medium">Hidden tests ({q.hidden.length}/15 — need 10–15)</h3>
-                  <button type="button" className="btn-secondary ml-auto" disabled={q.hidden.length >= 15} onClick={() => set('hidden', [...q.hidden, { input: '', output: '', weight: 1, isStress: false }])}>Add hidden test</button>
-                </div>
-                {q.hidden.map((h, i) => (
-                  <div key={i} className="card grid gap-2 md:grid-cols-[1fr_1fr_140px]">
-                    <Field label={`Hidden ${i + 1} input`}><textarea className="input h-20 font-mono text-xs" value={h.input.length > 20000 ? `${h.input.slice(0, 20000)}\n… (${h.input.length} chars)` : h.input} readOnly={h.input.length > 20000} onChange={(e) => set('hidden', q.hidden.map((x, j) => (j === i ? { ...x, input: e.target.value } : x)))} /></Field>
-                    <Field label="Expected output"><textarea className="input h-20 font-mono text-xs" value={h.output} onChange={(e) => set('hidden', q.hidden.map((x, j) => (j === i ? { ...x, output: e.target.value } : x)))} /></Field>
-                    <div className="space-y-2">
-                      <Field label="Weight"><input className="input" type="number" min={1} max={100} value={h.weight} onChange={(e) => set('hidden', q.hidden.map((x, j) => (j === i ? { ...x, weight: Number(e.target.value) } : x)))} /></Field>
-                      <label className="flex items-center gap-1 text-xs"><input type="checkbox" checked={h.isStress} onChange={(e) => set('hidden', q.hidden.map((x, j) => (j === i ? { ...x, isStress: e.target.checked } : x)))} /> Max-constraint stress test</label>
-                      <button type="button" className="text-xs text-rose-600 hover:underline" onClick={() => set('hidden', q.hidden.filter((_, j) => j !== i))}>Remove</button>
-                    </div>
-                  </div>
-                ))}
-              </>
-            )}
-
-            {tab === 'code' && (
-              <>
-                <div className="flex flex-wrap gap-1">
-                  {RUNTIME_IDS.map((r) => (
-                    <button type="button" key={r} onClick={() => setLang(r)} className={`btn ${lang === r ? 'bg-brand-600 text-white' : 'border border-slate-300 dark:border-slate-700'}`}>
-                      {RUNTIMES[r].label}{REQUIRED_RUNTIMES.includes(r) ? '*' : ''}{q.templates[r] ? ' ✓' : ''}
-                    </button>
-                  ))}
-                </div>
-                <p className="text-xs text-slate-500">
-                  * required. The stub is what students see. The hidden driver reads input, calls the student&apos;s function and prints the output. For C, C++, Python, JavaScript and Rust it is
-                  appended to the student&apos;s code (or put a line containing <code>@@STUDENT_CODE@@</code> where it should go). Java, Go and C# compile it as a separate file
-                  ({RUNTIMES.java.label}: <code>public class Main</code> + student <code>class Solution</code>).
-                </p>
-                <div className="flex gap-1 text-sm">
-                  {(['stub', 'driver', 'solution'] as const).map((p) => (
-                    <button type="button" key={p} className={`px-2 py-1 capitalize ${part === p ? 'border-b-2 border-brand-600 font-medium' : 'text-slate-500'}`} onClick={() => setPart(p)}>
-                      {p === 'stub' ? 'Starter stub' : p === 'driver' ? 'Hidden driver' : 'Reference solution'}
-                    </button>
-                  ))}
-                  {q.templates[lang] && <button type="button" className="ml-auto text-xs text-rose-600 hover:underline" onClick={() => { const t = { ...q.templates }; delete t[lang]; set('templates', t); }}>Remove {RUNTIMES[lang].label}</button>}
-                </div>
-                <div className="h-[420px] overflow-hidden rounded border border-slate-200 dark:border-slate-800">
-                  <CodeEditor
-                    key={`${lang}-${part}`}
-                    value={tpl[part]}
-                    language={RUNTIMES[lang].monaco}
-                    readOnly={!writable}
-                    onChange={(val) => set('templates', { ...q.templates, [lang]: { ...tpl, [part]: val } })}
-                    ariaLabel={`${RUNTIMES[lang].label} ${part}`}
-                  />
-                </div>
-              </>
+            {q.type === 'web' ? (
+              <WebFields q={q} setQ={narrow<typeof q>()} isNew={!id} writable={writable} />
+            ) : q.type === 'db' ? (
+              <DbFields q={q} setQ={narrow<typeof q>()} writable={writable} />
+            ) : (
+              <CodingFields q={q} setQ={narrow<typeof q>()} writable={writable} />
             )}
           </fieldset>
         </div>
@@ -287,7 +181,7 @@ export default function EditQuestion() {
           ) : (
           <div className="card">
             <h3 className="mb-2 text-sm font-medium">Publish checklist</h3>
-            {problems.length === 0 ? <p className="text-sm text-emerald-700 dark:text-emerald-400">Structure is complete. Validation will run every reference solution against every test.</p> : (
+            {problems.length === 0 ? <p className="text-sm text-emerald-700 dark:text-emerald-400">Structure is complete. Validation will run every reference solution against every test{q.type === 'web' ? ', and check the starter files fail' : ''}.</p> : (
               <ul className="list-disc space-y-1 pl-4 text-xs text-slate-600 dark:text-slate-400">{problems.map((p) => <li key={p}>{p}</li>)}</ul>
             )}
           </div>
@@ -298,9 +192,9 @@ export default function EditQuestion() {
                 Validation {v.pending ? <><Spinner /> running…</> : v.ok ? <Badge tone="green">passed</Badge> : <Badge tone="red">failed</Badge>}
               </h3>
               <ul className="space-y-1 text-xs">
-                {Object.entries(v.runtimes).sort(([a], [b]) => RUNTIME_IDS.indexOf(a as RuntimeId) - RUNTIME_IDS.indexOf(b as RuntimeId)).map(([rt, r]) => (
-                  <li key={rt} className="flex justify-between">
-                    <span>{RUNTIMES[rt as RuntimeId]?.label ?? rt}</span>
+                {Object.entries(v.runtimes).sort(([a], [b]) => targetOrder(a) - targetOrder(b)).map(([rt, r]) => (
+                  <li key={rt} className="flex justify-between gap-2">
+                    <span>{targetLabel(rt)}</span>
                     <span className={r.ok ? 'text-emerald-600' : 'text-rose-600'}>{r.ok ? `✓ ${r.maxCpuMs}/${r.limitMs} ms` : '✗'}</span>
                   </li>
                 ))}

@@ -5,10 +5,13 @@ import Link from 'next/link';
 import { useEffect, useState } from 'react';
 import { get } from '@/lib/api';
 import { useRequireUser } from '@/lib/session';
-import { Difficulty, ErrorBox, Page, Spinner } from '@/components/ui';
+import { Badge, Difficulty, ErrorBox, Page, Spinner } from '@/components/ui';
+
+const TYPE_LABEL = { coding: 'Coding', web: 'Web', db: 'Database' } as const;
 
 interface Item {
   id: string;
+  type: 'coding' | 'web' | 'db';
   title: string;
   difficulty: string;
   tags: string[];
@@ -64,6 +67,7 @@ export default function Practice() {
             <li key={i.id}>
               <Link href={`/solve?id=${i.id}`} className="flex items-center gap-3 px-4 py-3 hover:bg-slate-50 dark:hover:bg-slate-900">
                 <span className="font-medium">{i.title}</span>
+                <Badge tone="blue">{TYPE_LABEL[i.type] ?? i.type}</Badge>
                 <Difficulty value={i.difficulty} />
                 <span className="ml-auto flex gap-1">
                   {i.tags.map((t) => (

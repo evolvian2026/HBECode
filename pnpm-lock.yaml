@@ -118,6 +118,9 @@ importers:
       '@hbe/shared':
         specifier: workspace:*
         version: link:../../packages/shared
+      '@hbe/web-runtime':
+        specifier: workspace:*
+        version: link:../../packages/web-runtime
       '@monaco-editor/react':
         specifier: 4.7.0
         version: 4.7.0(monaco-editor@0.57.0)(react-dom@19.3.0(react@19.3.0))(react@19.3.0)
@@ -142,6 +145,9 @@ importers:
       remark-gfm:
         specifier: 4.0.1
         version: 4.0.1
+      zod:
+        specifier: ^4.6.5
+        version: 4.6.5
     devDependencies:
       '@playwright/test':
         specifier: 1.63.0

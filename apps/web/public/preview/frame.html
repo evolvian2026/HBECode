@@ -1,0 +1,22 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<!-- Student code preview. Loaded only inside a sandboxed iframe without allow-same-origin.
+     This CSP (no network of any kind) also governs the document written below. Keep it in sync
+     with PREVIEW_CSP in @hbe/web-runtime. -->
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; img-src data: blob:; font-src data:; media-src data: blob:; connect-src 'none'; form-action 'none'; base-uri 'none'">
+<meta name="referrer" content="no-referrer">
+</head>
+<body>
+<script>
+  addEventListener('message', function (e) {
+    if (e.source !== parent || !e.data || e.data.type !== 'hbe-preview' || typeof e.data.html !== 'string') return;
+    document.open();
+    document.write(e.data.html);
+    document.close();
+  }, { once: true });
+  parent.postMessage({ type: 'hbe-preview-ready' }, '*');
+</script>
+</body>
+</html>

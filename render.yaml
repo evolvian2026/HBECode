@@ -67,6 +67,14 @@ services:
       - path: /*
         name: Strict-Transport-Security
         value: max-age=31536000; includeSubDomains
+      # Web-question preview frame: framed by our own pages only. Must override the two /* rules
+      # above; verify after deploy (docs/deployment.md): curl -I https://<web>/preview/frame.html
+      - path: /preview/*
+        name: X-Frame-Options
+        value: SAMEORIGIN
+      - path: /preview/*
+        name: Content-Security-Policy
+        value: "frame-ancestors 'self'"
       - path: /monaco/*
         name: Cache-Control
         value: public, max-age=604800, immutable

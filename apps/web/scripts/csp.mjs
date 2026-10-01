@@ -36,6 +36,8 @@ export function policy(scriptHashes) {
 
 let pages = 0;
 for (const file of html(out)) {
+  // The preview frame carries its own (much stricter, network-free) policy for student code.
+  if (file.startsWith(join(out, 'preview') + '/')) continue;
   let doc = readFileSync(file, 'utf8');
   const hashes = new Set();
   for (const m of doc.matchAll(/<script(?![^>]*\bsrc=)[^>]*>([\s\S]*?)<\/script>/g)) {

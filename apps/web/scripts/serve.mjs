@@ -16,12 +16,16 @@ export const SECURITY_HEADERS = {
   'cross-origin-opener-policy': 'same-origin',
 };
 
+export const PREVIEW_FRAMING = { 'x-frame-options': 'SAMEORIGIN', 'content-security-policy': "frame-ancestors 'self'" };
+
 createServer((req, res) => {
   const url = new URL(req.url ?? '/', 'http://x');
   let p = normalize(join(root, decodeURIComponent(url.pathname)));
   if (!p.startsWith(root)) return void res.writeHead(400).end();
   if (existsSync(p) && statSync(p).isDirectory()) p = join(p, 'index.html');
   if (!existsSync(p)) p = join(root, '404.html');
-  res.writeHead(existsSync(p) && !p.endsWith('404.html') ? 200 : 404, { 'content-type': types[extname(p)] ?? 'application/octet-stream', ...SECURITY_HEADERS });
+  // The preview frame may be framed by our own pages (and only them); see render.yaml.
+  const framing = url.pathname.startsWith('/preview/') ? PREVIEW_FRAMING : {};
+  res.writeHead(existsSync(p) && !p.endsWith('404.html') ? 200 : 404, { 'content-type': types[extname(p)] ?? 'application/octet-stream', ...SECURITY_HEADERS, ...framing });
   createReadStream(p).pipe(res);
 }).listen(port, () => console.log(`web on http://localhost:${port}`));
