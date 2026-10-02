@@ -29,6 +29,8 @@ export async function createApp(): Promise<NestFastifyApplication> {
   const fastify = app.getHttpAdapter().getInstance();
 
   await app.register(fastifyCookie);
+  // Bulk question uploads arrive as the raw file body (no multipart parsing of untrusted input).
+  fastify.addContentTypeParser('application/octet-stream', { parseAs: 'buffer', bodyLimit: cfg.UPLOAD_MAX_BYTES }, (_req, body, done) => done(null, body));
   // JSON API: lock everything down. (The web app sets its own CSP.)
   await app.register(fastifyHelmet, {
     contentSecurityPolicy: { directives: { defaultSrc: ["'none'"], frameAncestors: ["'none'"] } },

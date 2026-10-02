@@ -95,7 +95,7 @@ function slugify(title: string): string {
   return `${base}-${randomUUID().slice(0, 6)}`;
 }
 
-const contentHash = (q: QuestionInput) => sha256(`${q.title.trim().toLowerCase()}\n${q.statement.replace(/\s+/g, ' ').trim().toLowerCase()}`);
+export const contentHash = (q: QuestionInput) => sha256(`${q.title.trim().toLowerCase()}\n${q.statement.replace(/\s+/g, ' ').trim().toLowerCase()}`);
 const escapeLike = (s: string) => s.replace(/[%_\\]/g, '\\$&');
 
 @Injectable()

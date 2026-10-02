@@ -402,6 +402,61 @@ export const proctorSnapshots = hbe.table('proctor_snapshots', {
   createdAt: ts('created_at').notNull().defaultNow(),
 });
 
+export interface UploadActor {
+  id: string;
+  role: 'super_admin' | 'teacher';
+  tenantId: string | null;
+}
+export interface UploadIssue {
+  loc: string;
+  field?: string;
+  message: string;
+}
+
+export const uploadJobs = hbe.table('upload_jobs', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  tenantId: uuid('tenant_id'),
+  createdBy: uuid('created_by'),
+  filename: text('filename').notNull(),
+  format: text('format').$type<'xlsx' | 'docx' | 'json'>().notNull(),
+  sizeBytes: integer('size_bytes').notNull(),
+  file: bytea('file'),
+  status: text('status').$type<'queued' | 'parsing' | 'parsed' | 'failed' | 'importing' | 'done' | 'discarded'>().notNull().default('queued'),
+  options: jsonb('options').$type<{ publish?: boolean }>().notNull().default({}),
+  counts: jsonb('counts').$type<Record<string, number>>().notNull().default({}),
+  issues: jsonb('issues').$type<(UploadIssue & { severity: 'error' | 'warning' })[]>().notNull().default([]),
+  error: text('error'),
+  actor: jsonb('actor').$type<UploadActor>().notNull(),
+  leaseUntil: ts('lease_until'),
+  attempts: integer('attempts').notNull().default(0),
+  createdAt: ts('created_at').notNull().defaultNow(),
+  parsedAt: ts('parsed_at'),
+  confirmedAt: ts('confirmed_at'),
+  finishedAt: ts('finished_at'),
+});
+
+export const uploadRows = hbe.table(
+  'upload_rows',
+  {
+    jobId: uuid('job_id').notNull(),
+    tenantId: uuid('tenant_id'),
+    rowNo: integer('row_no').notNull(),
+    key: text('key').notNull(),
+    title: text('title').notNull().default(''),
+    type: text('type').notNull().default(''),
+    loc: text('loc').notNull().default(''),
+    action: text('action').$type<'create' | 'update'>().notNull().default('create'),
+    targetId: uuid('target_id'),
+    status: text('status').$type<'invalid' | 'duplicate' | 'ready' | 'imported' | 'failed'>().notNull(),
+    errors: jsonb('errors').$type<UploadIssue[]>().notNull().default([]),
+    warnings: jsonb('warnings').$type<UploadIssue[]>().notNull().default([]),
+    payload: jsonb('payload').$type<Record<string, unknown>>(),
+    questionId: uuid('question_id'),
+    message: text('message'),
+  },
+  (t) => [primaryKey({ columns: [t.jobId, t.rowNo] })],
+);
+
 export const allTables = {
   tenants,
   users,
@@ -427,4 +482,6 @@ export const allTables = {
   attemptDrafts,
   proctorEvents,
   proctorSnapshots,
+  uploadJobs,
+  uploadRows,
 };

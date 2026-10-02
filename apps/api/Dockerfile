@@ -7,6 +7,7 @@ WORKDIR /repo
 COPY pnpm-lock.yaml pnpm-workspace.yaml package.json tsconfig.base.json ./
 COPY packages/shared/package.json packages/shared/
 COPY packages/db/package.json packages/db/
+COPY packages/question-format/package.json packages/question-format/
 COPY apps/api/package.json apps/api/
 # Optional build secret `extra_ca` for TLS-intercepting build networks.
 RUN --mount=type=secret,id=extra_ca,required=false \
@@ -14,6 +15,7 @@ RUN --mount=type=secret,id=extra_ca,required=false \
     corepack enable && pnpm install --frozen-lockfile --filter "@hbe/api..."
 COPY packages/shared packages/shared
 COPY packages/db packages/db
+COPY packages/question-format packages/question-format
 COPY apps/api apps/api
 RUN --mount=type=secret,id=extra_ca,required=false \
     if [ -s /run/secrets/extra_ca ]; then export NODE_EXTRA_CA_CERTS=/run/secrets/extra_ca; fi; \

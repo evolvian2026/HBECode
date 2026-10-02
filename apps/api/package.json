@@ -17,6 +17,7 @@
     "@fastify/cookie": "^11.1.2",
     "@fastify/helmet": "^13.1.1",
     "@hbe/db": "workspace:*",
+    "@hbe/question-format": "workspace:*",
     "@hbe/shared": "workspace:*",
     "@nestjs/common": "^12.1.2",
     "@nestjs/core": "^12.1.2",
@@ -34,7 +35,8 @@
   },
   "devDependencies": {
     "@types/pg": "^8.15.0",
-    "@types/ws": "^8.18.2"
+    "@types/ws": "^8.18.2",
+    "jszip": "^3.10.2"
   },
   "files": [
     "dist"

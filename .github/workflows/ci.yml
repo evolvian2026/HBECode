@@ -21,12 +21,13 @@ jobs:
       - uses: actions/setup-node@v4
         with: { node-version: 22, cache: pnpm }
       - run: pnpm install --frozen-lockfile
-      - run: pnpm --filter @hbe/shared build && pnpm --filter @hbe/web-runtime build && pnpm --filter @hbe/db build
+      - run: pnpm --filter @hbe/shared build && pnpm --filter @hbe/web-runtime build && pnpm --filter @hbe/db build && pnpm --filter @hbe/question-format build
       - run: pnpm lint
       - run: pnpm --filter @hbe/api exec tsc -p tsconfig.json --noEmit
       - run: pnpm --filter @hbe/executor typecheck
       - run: pnpm --filter @hbe/shared test
       - run: pnpm --filter @hbe/web-runtime test
+      - run: pnpm --filter @hbe/question-format test
       - run: pnpm --filter @hbe/executor test
       - name: Web build (static export + CSP)
         run: pnpm --filter @hbe/web build
@@ -52,7 +53,7 @@ jobs:
       - run: pnpm install --frozen-lockfile
       - name: Non-superuser owner role (mirrors Supabase)
         run: PGPASSWORD=postgres psql -h 127.0.0.1 -U postgres -c "CREATE ROLE hbe_owner LOGIN CREATEROLE CREATEDB PASSWORD 'hbe_owner'"
-      - run: pnpm --filter @hbe/shared build && pnpm --filter @hbe/db build && pnpm --filter @hbe/api build
+      - run: pnpm --filter @hbe/shared build && pnpm --filter @hbe/db build && pnpm --filter @hbe/question-format build && pnpm --filter @hbe/api build
       - run: pnpm --filter @hbe/db test
       - run: pnpm --filter @hbe/api test
 
@@ -91,7 +92,7 @@ jobs:
           severity: CRITICAL
           ignore-unfixed: true
           exit-code: '0' # report only until the baseline is triaged
-      - run: pnpm --filter @hbe/shared build && pnpm --filter @hbe/web-runtime build && pnpm --filter @hbe/db build && pnpm --filter @hbe/api build
+      - run: pnpm --filter @hbe/shared build && pnpm --filter @hbe/web-runtime build && pnpm --filter @hbe/db build && pnpm --filter @hbe/question-format build && pnpm --filter @hbe/api build
       # Also starts throwaway PostgreSQL/MySQL/MongoDB runner containers for the DB suite.
       - name: Sandbox tests (8 languages, escape attempts, web grader, DB runners)
         run: pnpm --filter @hbe/executor test:sandbox

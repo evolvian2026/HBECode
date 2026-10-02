@@ -32,6 +32,8 @@ const Env = z.object({
   LOG_LEVEL: z.enum(['fatal', 'error', 'warn', 'info', 'debug', 'trace', 'silent']).default('info'),
   SWEEPER_INTERVAL_MS: z.coerce.number().int().default(10_000),
   /** Sign-ins per IP per 5 minutes. A lab of students behind one NAT shares an IP. */
+  /** Largest question file accepted for bulk upload (bytes). */
+  UPLOAD_MAX_BYTES: z.coerce.number().int().min(1024).max(50 * 1024 * 1024).default(10 * 1024 * 1024),
   LOGIN_RATE_LIMIT_PER_IP: z.coerce.number().int().min(5).default(300),
 });
 

@@ -14,11 +14,13 @@ import { RealtimeService } from './realtime/realtime.service.js';
 import { AttemptsService } from './tests/attempts.service.js';
 import { AttemptsController, MyTestsController, TestsController } from './tests/tests.controller.js';
 import { TestsService } from './tests/tests.service.js';
+import { ExportsController, UploadsController } from './uploads/uploads.controller.js';
+import { UploadsService } from './uploads/uploads.service.js';
 
 @Module({
   imports: [InfraModule, AuthModule, OrgModule],
-  controllers: [HealthController, QuestionsController, PracticeController, SubmissionsController, ExecutorController, TestsController, MyTestsController, AttemptsController],
-  providers: [QuestionsService, SubmissionsService, DispatchService, RealtimeService, TestsService, AttemptsService, RealtimeGateway],
+  controllers: [HealthController, QuestionsController, PracticeController, SubmissionsController, ExecutorController, TestsController, MyTestsController, AttemptsController, UploadsController, ExportsController],
+  providers: [QuestionsService, SubmissionsService, DispatchService, RealtimeService, TestsService, AttemptsService, RealtimeGateway, UploadsService],
   exports: [QuestionsService, DispatchService, AttemptsService],
 })
 export class AppModule {}
