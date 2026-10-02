@@ -68,6 +68,10 @@ Keep them in a password manager. Never commit them. `.env*` files are git-ignore
    - Image **Ubuntu 24.04**.
    - Region **Singapore**.
    - Add your SSH key.
+   - Boot volume: click **Specify a custom boot volume size** and set **100 GB** (the default is ~47 GB). Leave the performance at the default **Balanced**.
+     - **Why:** the executor image is ~5.5 GB, the three database runner images ~3 GB, and Docker's build cache several GB more. Updating the executor briefly needs the old and new images side by side (~11 GB). With the default size the disk can fill up mid-update, and grading stops until someone cleans up by hand. The extra space also keeps the build cache (code-only updates rebuild in minutes, not ~15 min) and lets you keep the previous image for a quick rollback.
+     - **Cost: none** within Always Free, which includes 200 GB of block storage in total (boot volumes count toward it). Charges apply only on a Pay-As-You-Go account that goes beyond the free limits: more than 200 GB of volumes in total, more than 5 volume backups, or a performance level above *Balanced*. A plain Free Tier account blocks you instead of charging. Check the current limits on Oracle's Free Tier page when you create the VM.
+     - After the VM is up, confirm Ubuntu sees the full size: `df -h /` should show about 95 GB. If it shows less, run `sudo growpart /dev/sda 1 && sudo resize2fs /dev/sda1` (Ubuntu images on Oracle normally do this automatically on first boot).
    - Networking: the default VCN is fine. **Allow no inbound ports except 22**: the executor only makes outbound HTTPS calls to the API.
    If you get "Out of capacity", retry later or pick another availability domain.
 2. On the VM:
