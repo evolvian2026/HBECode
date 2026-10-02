@@ -3,7 +3,9 @@ import fastifyCookie from '@fastify/cookie';
 import fastifyHelmet from '@fastify/helmet';
 import { NestFactory } from '@nestjs/core';
 import { FastifyAdapter, type NestFastifyApplication } from '@nestjs/platform-fastify';
+import { ATTEMPT_TOKEN_HEADER } from '@hbe/shared';
 import { AppModule } from './app.module.js';
+import { RealtimeGateway } from './realtime/realtime.gateway.js';
 import { CSRF_COOKIE } from './common/cookies.js';
 import { safeEqual } from './common/crypto.js';
 import { ProblemFilter } from './common/problem.filter.js';
@@ -37,7 +39,7 @@ export async function createApp(): Promise<NestFastifyApplication> {
     origin: (origin, cb) => cb(null, !origin || cfg.webOrigins.includes(origin)),
     credentials: true,
     methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE'],
-    allowedHeaders: ['content-type', 'x-csrf-token'],
+    allowedHeaders: ['content-type', 'x-csrf-token', ATTEMPT_TOKEN_HEADER],
     maxAge: 600,
   });
 
@@ -62,5 +64,7 @@ export async function createApp(): Promise<NestFastifyApplication> {
   app.setGlobalPrefix('api/v1', { exclude: ['healthz', 'readyz'] });
   app.useGlobalFilters(new ProblemFilter());
   app.enableShutdownHooks();
+  // WebSocket upgrades are handled outside Fastify's router (see RealtimeGateway).
+  app.get(RealtimeGateway).attach(app.getHttpServer());
   return app;
 }

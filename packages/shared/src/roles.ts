@@ -18,15 +18,18 @@ export const PERMISSIONS = [
   'submission:read_any', // read other users' submissions within scope
   'practice:use', // practice compiler + published practice questions
   'audit:read',
+  'test:manage', // create, schedule, assign, publish and close tests
+  'test:proctor', // live monitor, approve devices, warn, extend time, terminate, view timelines/snapshots
+  'test:attempt', // take assigned tests
 ] as const;
 export type Permission = (typeof PERMISSIONS)[number];
 
 const ROLE_PERMISSIONS: Record<Role, readonly Permission[]> = {
-  super_admin: PERMISSIONS,
-  client_admin: ['user:manage', 'batch:manage', 'submission:read_any', 'practice:use', 'audit:read'],
-  teacher: ['batch:manage', 'question:read_full', 'question:write', 'submission:read_any', 'practice:use'],
-  associate: ['question:read_full', 'submission:read_any', 'practice:use'],
-  student: ['practice:use'],
+  super_admin: PERMISSIONS.filter((p) => p !== 'test:attempt'),
+  client_admin: ['user:manage', 'batch:manage', 'submission:read_any', 'practice:use', 'audit:read', 'test:proctor'],
+  teacher: ['batch:manage', 'question:read_full', 'question:write', 'submission:read_any', 'practice:use', 'test:manage', 'test:proctor'],
+  associate: ['question:read_full', 'submission:read_any', 'practice:use', 'test:proctor'],
+  student: ['practice:use', 'test:attempt'],
   guest: ['practice:use'],
 };
 

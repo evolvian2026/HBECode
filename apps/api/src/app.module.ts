@@ -9,11 +9,16 @@ import { PracticeController, QuestionsController } from './questions/questions.c
 import { QuestionsService } from './questions/questions.service.js';
 import { SubmissionsController } from './submissions/submissions.controller.js';
 import { SubmissionsService } from './submissions/submissions.service.js';
+import { RealtimeGateway } from './realtime/realtime.gateway.js';
+import { RealtimeService } from './realtime/realtime.service.js';
+import { AttemptsService } from './tests/attempts.service.js';
+import { AttemptsController, MyTestsController, TestsController } from './tests/tests.controller.js';
+import { TestsService } from './tests/tests.service.js';
 
 @Module({
   imports: [InfraModule, AuthModule, OrgModule],
-  controllers: [HealthController, QuestionsController, PracticeController, SubmissionsController, ExecutorController],
-  providers: [QuestionsService, SubmissionsService, DispatchService],
-  exports: [QuestionsService, DispatchService],
+  controllers: [HealthController, QuestionsController, PracticeController, SubmissionsController, ExecutorController, TestsController, MyTestsController, AttemptsController],
+  providers: [QuestionsService, SubmissionsService, DispatchService, RealtimeService, TestsService, AttemptsService, RealtimeGateway],
+  exports: [QuestionsService, DispatchService, AttemptsService],
 })
 export class AppModule {}

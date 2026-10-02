@@ -222,6 +222,7 @@ export const submissions = hbe.table('submissions', {
   executorId: text('executor_id'),
   validationRun: uuid('validation_run'),
   validationRole: text('validation_role').$type<'reference' | 'starter'>(),
+  attemptId: uuid('attempt_id'),
   createdAt: ts('created_at').notNull().defaultNow(),
   startedAt: ts('started_at'),
   finishedAt: ts('finished_at'),
@@ -274,6 +275,133 @@ export const auditLogs = hbe.table('audit_logs', {
   createdAt: ts('created_at').notNull().defaultNow(),
 });
 
+const bytea = customType<{ data: Buffer }>({ dataType: () => 'bytea' });
+
+export type TestStatus = 'draft' | 'published' | 'closed';
+export type AttemptStatus = 'in_progress' | 'submitted' | 'auto_submitted' | 'terminated';
+
+export const tests = hbe.table('tests', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  tenantId: uuid('tenant_id').notNull(),
+  title: text('title').notNull(),
+  description: text('description').notNull().default(''),
+  status: text('status').$type<TestStatus>().notNull().default('draft'),
+  startsAt: ts('starts_at').notNull(),
+  endsAt: ts('ends_at').notNull(),
+  durationMin: integer('duration_min').notNull(),
+  /** Validated by the API's TestSettings schema (proctoring, violation policy, webcam, results). */
+  settings: jsonb('settings').$type<Record<string, unknown>>().notNull().default({}),
+  createdBy: uuid('created_by'),
+  publishedAt: ts('published_at'),
+  closedAt: ts('closed_at'),
+  createdAt: ts('created_at').notNull().defaultNow(),
+  updatedAt: ts('updated_at').notNull().defaultNow(),
+});
+
+export const testQuestions = hbe.table(
+  'test_questions',
+  {
+    testId: uuid('test_id').notNull(),
+    tenantId: uuid('tenant_id'),
+    questionId: uuid('question_id').notNull(),
+    versionId: uuid('version_id'),
+    ordinal: integer('ordinal').notNull(),
+    points: numeric('points', { precision: 6, scale: 2 }).notNull().default('100'),
+  },
+  (t) => [primaryKey({ columns: [t.testId, t.questionId] })],
+);
+
+export const testAssignments = hbe.table('test_assignments', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  testId: uuid('test_id').notNull(),
+  tenantId: uuid('tenant_id'),
+  batchId: uuid('batch_id'),
+  userId: uuid('user_id'),
+  createdAt: ts('created_at').notNull().defaultNow(),
+});
+
+export interface AttemptBreakdown {
+  [questionId: string]: { score: number; points: number; earned: number; submissions: number };
+}
+
+export const attempts = hbe.table('attempts', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  tenantId: uuid('tenant_id'),
+  testId: uuid('test_id').notNull(),
+  userId: uuid('user_id').notNull(),
+  status: text('status').$type<AttemptStatus>().notNull().default('in_progress'),
+  startedAt: ts('started_at').notNull().defaultNow(),
+  deadlineAt: ts('deadline_at').notNull(),
+  extraMinutes: integer('extra_minutes').notNull().default(0),
+  submittedAt: ts('submitted_at'),
+  submitReason: text('submit_reason').$type<'student' | 'deadline' | 'violations' | 'proctor' | 'test_closed'>(),
+  score: numeric('score', { precision: 8, scale: 2 }),
+  maxScore: numeric('max_score', { precision: 8, scale: 2 }),
+  breakdown: jsonb('breakdown').$type<AttemptBreakdown>().notNull().default({}),
+  violationCount: integer('violation_count').notNull().default(0),
+  warningLevel: integer('warning_level').notNull().default(0),
+  activeSessionHash: text('active_session_hash'),
+  lastHeartbeatAt: ts('last_heartbeat_at'),
+  heartbeatGapOpen: boolean('heartbeat_gap_open').notNull().default(false),
+  ip: inet('ip'),
+  userAgent: text('user_agent'),
+  createdAt: ts('created_at').notNull().defaultNow(),
+  updatedAt: ts('updated_at').notNull().defaultNow(),
+});
+
+export const attemptSessions = hbe.table('attempt_sessions', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  attemptId: uuid('attempt_id').notNull(),
+  tenantId: uuid('tenant_id'),
+  tokenHash: text('token_hash').notNull(),
+  status: text('status').$type<'active' | 'pending' | 'denied' | 'replaced'>().notNull(),
+  fingerprint: text('fingerprint'),
+  ip: inet('ip'),
+  userAgent: text('user_agent'),
+  decidedBy: uuid('decided_by'),
+  decidedAt: ts('decided_at'),
+  createdAt: ts('created_at').notNull().defaultNow(),
+});
+
+export const attemptDrafts = hbe.table(
+  'attempt_drafts',
+  {
+    attemptId: uuid('attempt_id').notNull(),
+    questionId: uuid('question_id').notNull(),
+    runtime: text('runtime').notNull(),
+    tenantId: uuid('tenant_id'),
+    code: text('code').notNull(),
+    updatedAt: ts('updated_at').notNull().defaultNow(),
+  },
+  (t) => [primaryKey({ columns: [t.attemptId, t.questionId, t.runtime] })],
+);
+
+export type ProctorSeverity = 'info' | 'low' | 'medium' | 'high';
+
+export const proctorEvents = hbe.table('proctor_events', {
+  id: bigint('id', { mode: 'number' }).primaryKey().generatedAlwaysAsIdentity(),
+  tenantId: uuid('tenant_id'),
+  attemptId: uuid('attempt_id').notNull(),
+  type: text('type').notNull(),
+  severity: text('severity').$type<ProctorSeverity>().notNull(),
+  counted: boolean('counted').notNull().default(false),
+  source: text('source').$type<'client' | 'server' | 'proctor'>().notNull().default('client'),
+  clientTs: ts('client_ts'),
+  serverTs: ts('server_ts').notNull().defaultNow(),
+  data: jsonb('data').$type<Record<string, unknown>>().notNull().default({}),
+});
+
+export const proctorSnapshots = hbe.table('proctor_snapshots', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  tenantId: uuid('tenant_id'),
+  attemptId: uuid('attempt_id').notNull(),
+  eventType: text('event_type').notNull(),
+  contentType: text('content_type').$type<'image/jpeg'>().notNull(),
+  image: bytea('image').notNull(),
+  sizeBytes: integer('size_bytes').notNull(),
+  createdAt: ts('created_at').notNull().defaultNow(),
+});
+
 export const allTables = {
   tenants,
   users,
@@ -291,4 +419,12 @@ export const allTables = {
   submissionResults,
   drafts,
   auditLogs,
+  tests,
+  testQuestions,
+  testAssignments,
+  attempts,
+  attemptSessions,
+  attemptDrafts,
+  proctorEvents,
+  proctorSnapshots,
 };

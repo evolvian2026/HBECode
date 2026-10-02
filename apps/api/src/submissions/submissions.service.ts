@@ -8,6 +8,7 @@ import { badRequest, notFound } from '../common/errors.js';
 import { RateLimitService } from '../common/rate-limit.service.js';
 import { DispatchService, type Priority } from '../executor/dispatch.service.js';
 import { DbService } from '../infra/infra.module.js';
+import { AttemptsService } from '../tests/attempts.service.js';
 
 /** Per-user limits (per minute). Guests share a stricter budget. */
 const LIMITS = {
@@ -22,19 +23,26 @@ export class SubmissionsService {
     private readonly db: DbService,
     private readonly dispatch: DispatchService,
     private readonly limits: RateLimitService,
+    private readonly attempts: AttemptsService,
   ) {}
 
-  async create(u: AuthUser, body: CreateSubmissionRequest): Promise<{ id: string }> {
+  async create(u: AuthUser, body: CreateSubmissionRequest, attemptToken?: string): Promise<{ id: string }> {
     if (body.customInput !== undefined && body.kind !== 'run') throw badRequest('customInput is only allowed for run');
     if (u.role === 'guest') await this.limits.enforce(`sub:guest:${u.id}`, LIMITS.guest, 60);
     await this.limits.enforce(`sub:${body.kind}:${u.id}`, LIMITS[body.kind], 60);
 
     const staff = hasPermission(u.role, 'question:read_full');
+    // Inside a test: only the attempt's active device, before the deadline, on the pinned version.
+    const attempt = body.attemptId ? await this.attempts.authorize(u, body.attemptId, attemptToken, true) : null;
+    const pinned = attempt ? await this.attempts.pinnedVersion(u, attempt, body.questionId) : null;
     const id = await this.db.run(dbCtx(u), async (tx) => {
-      // RLS decides visibility: learners only see published practice questions.
+      // RLS decides visibility: learners see published practice questions, and test questions
+      // only during their own open attempt.
       const [q] = await tx.select().from(questions).where(eq(questions.id, body.questionId));
       if (!q) throw notFound('Question');
-      const versionId = q.publishedVersionId ?? (staff ? q.latestVersionId : null);
+      // Exam-only questions are reachable through the attempt only (never via practice).
+      if (!attempt && !staff && !q.isPractice) throw notFound('Question');
+      const versionId = pinned ?? q.publishedVersionId ?? (staff ? q.latestVersionId : null);
       if (!versionId) throw notFound('Question');
       const [v] = await tx.select({ spec: questionVersions.spec }).from(questionVersions).where(eq(questionVersions.id, versionId));
       const type = questionType(v!);
@@ -64,7 +72,7 @@ export class SubmissionsService {
         .insert(submissions)
         .values({
           tenantId: u.tenantId, userId: u.id, questionId: q.id, versionId, runtime: body.runtime, kind: body.kind, priority,
-          code: body.code, customInput: body.kind === 'run' ? (body.customInput ?? null) : null,
+          code: body.code, customInput: body.kind === 'run' ? (body.customInput ?? null) : null, attemptId: attempt?.id ?? null,
         })
         .returning({ id: submissions.id, priority: submissions.priority });
       return s!;
@@ -130,8 +138,8 @@ export class SubmissionsService {
   async saveDraft(u: AuthUser, questionId: string, runtime: string, code: string) {
     await this.limits.enforce(`draft:${u.id}`, 120, 60);
     await this.db.run(dbCtx(u), async (tx) => {
-      const [q] = await tx.select({ id: questions.id }).from(questions).where(eq(questions.id, questionId));
-      if (!q) throw notFound('Question');
+      const [q] = await tx.select({ id: questions.id, isPractice: questions.isPractice }).from(questions).where(eq(questions.id, questionId));
+      if (!q || (!q.isPractice && !hasPermission(u.role, 'question:read_full'))) throw notFound('Question');
       await tx
         .insert(drafts)
         .values({ userId: u.id, questionId, runtime, tenantId: u.tenantId, code })

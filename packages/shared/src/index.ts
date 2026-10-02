@@ -12,3 +12,4 @@ export * from './schemas/db.js';
 export * from './result-compare.js';
 export * from './mongo-guard.js';
 export * from './schemas/question-input.js';
+export * from './schemas/tests.js';

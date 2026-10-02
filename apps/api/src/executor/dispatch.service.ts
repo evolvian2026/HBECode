@@ -31,6 +31,8 @@ export class DispatchService implements OnModuleInit, OnModuleDestroy {
   private readonly listeners = new Map<string, Set<(msg: string) => void>>();
   /** Registered by QuestionsService (kept as a hook to avoid an import cycle). */
   private validationHandler?: (submissionId: string, result: ExecResult) => Promise<void>;
+  /** Registered by AttemptsService: re-score an attempt when one of its submissions finishes. */
+  private attemptHandler?: (attemptId: string) => Promise<void>;
 
   constructor(
     private readonly db: DbService,
@@ -40,6 +42,10 @@ export class DispatchService implements OnModuleInit, OnModuleDestroy {
 
   onValidationResult(handler: (submissionId: string, result: ExecResult) => Promise<void>) {
     this.validationHandler = handler;
+  }
+
+  onAttemptSubmissionDone(handler: (attemptId: string) => Promise<void>) {
+    this.attemptHandler = handler;
   }
 
   private key(p: Priority) {
@@ -216,11 +222,12 @@ export class DispatchService implements OnModuleInit, OnModuleDestroy {
           maxMemKb: Math.max(0, ...result.tests.map((t) => t.memKb)), finishedAt: new Date(), leaseUntil: null,
         })
         .where(eq(submissions.id, s.id));
-      return { kind: s.kind };
+      return { kind: s.kind, attemptId: s.attemptId };
     });
     if (!outcome) return 'stale';
     await this.notify(result.jobId, 'done');
     if (outcome.kind === 'validate') await this.validationHandler?.(result.jobId, result);
+    if (outcome.attemptId) await this.attemptHandler?.(outcome.attemptId).catch((e) => this.log.error(`attempt re-score failed: ${(e as Error).message}`));
     return 'ok';
   }
 
@@ -254,12 +261,12 @@ export class DispatchService implements OnModuleInit, OnModuleDestroy {
     const now = new Date();
     const r = await this.db.system(async (tx) => {
       const expired = await tx
-        .select({ id: submissions.id, dispatchCount: submissions.dispatchCount, priority: submissions.priority })
+        .select({ id: submissions.id, dispatchCount: submissions.dispatchCount, priority: submissions.priority, attemptId: submissions.attemptId })
         .from(submissions)
         .where(and(eq(submissions.status, 'running'), lt(submissions.leaseUntil, now)))
         .limit(200);
-      const dead = expired.filter((e) => e.dispatchCount >= MAX_DISPATCH).map((e) => e.id);
-      if (dead.length) await tx.update(submissions).set({ status: 'failed', verdict: 'IE', finishedAt: now, leaseUntil: null }).where(inArray(submissions.id, dead));
+      const dead = expired.filter((e) => e.dispatchCount >= MAX_DISPATCH);
+      if (dead.length) await tx.update(submissions).set({ status: 'failed', verdict: 'IE', finishedAt: now, leaseUntil: null }).where(inArray(submissions.id, dead.map((d) => d.id)));
       const retry = expired.filter((e) => e.dispatchCount < MAX_DISPATCH);
       // Queued rows that have waited too long (e.g. the id was lost from Redis): push them again.
       const stuck = await tx
@@ -278,7 +285,8 @@ export class DispatchService implements OnModuleInit, OnModuleDestroy {
       return { again, dead };
     });
     for (const a of r.again) await this.redis.rpush(this.key(a.priority), a.id);
-    for (const d of r.dead) await this.notify(d, 'done');
+    for (const d of r.dead) await this.notify(d.id, 'done');
+    for (const d of r.dead) if (d.attemptId) await this.attemptHandler?.(d.attemptId).catch(() => undefined);
     if (r.again.length || r.dead.length) this.log.warn(`sweeper requeued ${r.again.length}, failed ${r.dead.length}`);
     return { requeued: r.again.length, failed: r.dead.length };
   }

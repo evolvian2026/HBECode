@@ -17,6 +17,8 @@ export const CreateSubmissionRequest = z.object({
   kind: z.enum(['run', 'submit']),
   /** Only for `run`: replaces the sample tests with one custom input. */
   customInput: z.string().max(MAX_CUSTOM_INPUT_BYTES).optional(),
+  /** Inside a test: the attempt (the device token goes in the x-attempt-token header). */
+  attemptId: Uuid.optional(),
 });
 export type CreateSubmissionRequest = z.infer<typeof CreateSubmissionRequest>;
 

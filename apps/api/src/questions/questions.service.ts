@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto';
 import { Injectable } from '@nestjs/common';
-import { languageSecrets, languageStubs, questions, questionVersions, submissions, testCases, type Tx, type ValidationReport } from '@hbe/db';
+import { languageSecrets, languageStubs, questions, questionVersions, submissions, testCases, testQuestions, type Tx, type ValidationReport } from '@hbe/db';
 import {
   compareResults,
   DIALECT_INFO,
@@ -182,6 +182,8 @@ export class QuestionsService {
         // Published questions may be referenced by tests and reports: archive instead of deleting.
         await tx.update(questions).set({ status: 'archived', isPractice: false }).where(eq(questions.id, id));
       } else {
+        const [used] = await tx.select({ testId: testQuestions.testId }).from(testQuestions).where(eq(testQuestions.questionId, id)).limit(1);
+        if (used) throw conflict('This question is part of a test. Remove it from the test first.');
         await tx.update(questions).set({ latestVersionId: null }).where(eq(questions.id, id));
         await tx.delete(questions).where(eq(questions.id, id));
       }
@@ -251,8 +253,20 @@ export class QuestionsService {
     return this.db.run(dbCtx(u), async (tx) => {
       const [row] = await tx.select().from(questions).where(eq(questions.id, id));
       if (!row) throw notFound('Question');
+      // Exam-only questions are served through the attempt endpoints only.
+      if (!staff && !row.isPractice) throw notFound('Question');
       const versionId = row.publishedVersionId ?? (staff ? row.latestVersionId : null);
       if (!versionId) throw notFound('Question');
+      return this.studentViewOf(tx, row, versionId, staff);
+    });
+  }
+
+  /**
+   * Learner view of one specific version (tests pin versions). Runs under the caller's RLS:
+   * students only reach versions they may see (practice, or a test they are taking).
+   */
+  async studentViewOf(tx: Tx, row: typeof questions.$inferSelect, versionId: string, staff: boolean): Promise<StudentQuestion | StudentWebQuestion | StudentDbQuestion> {
+    {
       const [v] = await tx.select().from(questionVersions).where(eq(questionVersions.id, versionId));
       if (!v) throw notFound('Question');
       // Students can read sample rows only (RLS); staff previews also return hidden rows, so filter.
@@ -294,7 +308,7 @@ export class QuestionsService {
           .sort((a, b) => Object.keys(RUNTIMES).indexOf(a.id) - Object.keys(RUNTIMES).indexOf(b.id)),
         preview,
       };
-    });
+    }
   }
 
   async practiceList(u: AuthUser, f: { q?: string; difficulty?: string; tag?: string; cursor?: string; limit: number }) {

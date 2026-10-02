@@ -1,5 +1,5 @@
-import { Body, Controller, Get, HttpCode, Inject, Param, ParseUUIDPipe, Post, Put, Query, Req, Res } from '@nestjs/common';
-import { CreateSubmissionRequest, DRAFT_KEYS, SaveDraftRequest } from '@hbe/shared';
+import { Body, Controller, Get, Headers, HttpCode, Inject, Param, ParseUUIDPipe, Post, Put, Query, Req, Res } from '@nestjs/common';
+import { ATTEMPT_TOKEN_HEADER, CreateSubmissionRequest, DRAFT_KEYS, SaveDraftRequest } from '@hbe/shared';
 import type { FastifyReply, FastifyRequest } from 'fastify';
 import { z } from 'zod';
 import { CONFIG, type AppConfig } from '../config.js';
@@ -21,8 +21,8 @@ export class SubmissionsController {
   @RequirePermission('practice:use')
   @Post('submissions')
   @HttpCode(202)
-  create(@CurrentUser() u: AuthUser, @Body(zp(CreateSubmissionRequest)) body: z.infer<typeof CreateSubmissionRequest>) {
-    return this.subs.create(u, body);
+  create(@CurrentUser() u: AuthUser, @Body(zp(CreateSubmissionRequest)) body: z.infer<typeof CreateSubmissionRequest>, @Headers(ATTEMPT_TOKEN_HEADER) token?: string) {
+    return this.subs.create(u, body, token);
   }
 
   @RequirePermission('practice:use')
