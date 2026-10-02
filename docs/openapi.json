@@ -2,7 +2,7 @@
   "openapi": "3.1.0",
   "info": {
     "title": "HBECode API",
-    "version": "0.4.0",
+    "version": "0.5.0",
     "description": "Cookie-session API. Unsafe methods require the `x-csrf-token` header (from GET /auth/csrf) and an allowed Origin. Executor endpoints (/internal/executor/*) are bearer-token only and are intentionally not documented here. Realtime pushes: WebSocket at /api/v1/ws (session cookie + allowed Origin); send {\"op\":\"sub\",\"channel\":\"attempt\",\"attemptId\",\"token\"} or {\"op\":\"sub\",\"channel\":\"monitor\",\"testId\"}."
   },
   "servers": [
@@ -6917,6 +6917,359 @@
             }
           }
         },
+        "responses": {
+          "200": {
+            "description": "Success"
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/uploads/templates/{format}": {
+      "get": {
+        "operationId": "getUploadsTemplatesFormat",
+        "tags": [
+          "uploads"
+        ],
+        "summary": "Excel or Word template (format = xlsx | docx) with instructions and examples",
+        "description": "Requires permission `question:write`.",
+        "security": [
+          {
+            "session": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "format",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success"
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/uploads": {
+      "post": {
+        "operationId": "postUploads",
+        "tags": [
+          "uploads"
+        ],
+        "summary": "Upload a question file (raw body; ?format=xlsx|docx|json&filename=); parsed in the background",
+        "description": "Requires permission `question:write`.",
+        "security": [
+          {
+            "session": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "format",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "$schema": "https://json-schema.org/draft/2020-12/schema",
+              "type": "string",
+              "enum": [
+                "xlsx",
+                "docx",
+                "json"
+              ]
+            }
+          },
+          {
+            "name": "filename",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "$schema": "https://json-schema.org/draft/2020-12/schema",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "202": {
+            "description": "Success"
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          }
+        }
+      },
+      "get": {
+        "operationId": "getUploads",
+        "tags": [
+          "uploads"
+        ],
+        "summary": "Recent uploads",
+        "description": "Requires permission `question:write`.",
+        "security": [
+          {
+            "session": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success"
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/uploads/{id}": {
+      "get": {
+        "operationId": "getUploadsId",
+        "tags": [
+          "uploads"
+        ],
+        "summary": "Upload status and per-row preview (errors, warnings, duplicates, updates)",
+        "description": "Requires permission `question:write`.",
+        "security": [
+          {
+            "session": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success"
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "operationId": "deleteUploadsId",
+        "tags": [
+          "uploads"
+        ],
+        "summary": "Discard an upload",
+        "description": "Requires permission `question:write`.",
+        "security": [
+          {
+            "session": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Success"
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/uploads/{id}/report": {
+      "get": {
+        "operationId": "getUploadsIdReport",
+        "tags": [
+          "uploads"
+        ],
+        "summary": "Problem report (xlsx)",
+        "description": "Requires permission `question:write`.",
+        "security": [
+          {
+            "session": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success"
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/uploads/{id}/confirm": {
+      "post": {
+        "operationId": "postUploadsIdConfirm",
+        "tags": [
+          "uploads"
+        ],
+        "summary": "Import the ready rows (optionally validate + publish)",
+        "description": "Requires permission `question:write`.",
+        "security": [
+          {
+            "session": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$schema": "https://json-schema.org/draft/2020-12/schema",
+                "type": "object",
+                "properties": {
+                  "publish": {
+                    "default": false,
+                    "type": "boolean"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "202": {
+            "description": "Success"
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/exports/questions": {
+      "get": {
+        "operationId": "getExportsQuestions",
+        "tags": [
+          "uploads"
+        ],
+        "summary": "Export questions with hidden tests and solutions (editable questions only; audited)",
+        "description": "Requires permission `question:write`.",
+        "security": [
+          {
+            "session": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "format",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "$schema": "https://json-schema.org/draft/2020-12/schema",
+              "type": "string",
+              "enum": [
+                "xlsx",
+                "docx",
+                "json"
+              ]
+            }
+          },
+          {
+            "name": "ids",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "$schema": "https://json-schema.org/draft/2020-12/schema",
+              "type": "string"
+            }
+          }
+        ],
         "responses": {
           "200": {
             "description": "Success"

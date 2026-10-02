@@ -138,3 +138,15 @@ describe('templates', () => {
     expect(r.questions.map((q) => q.input)).toEqual(examples);
   });
 });
+
+describe('format guide', () => {
+  it('docs/question-format.md documents every column of every table', async () => {
+    const { readFileSync } = await import('node:fs');
+    const { SHEETS } = await import('./columns.js');
+    const doc = readFileSync(new URL('../../../docs/question-format.md', import.meta.url), 'utf8');
+    for (const s of SHEETS) {
+      expect(doc).toContain(`### ${s.name}`);
+      for (const c of s.columns) expect(doc, `${s.name}.${c.name}`).toContain(`| \`${c.name}\` |`);
+    }
+  });
+});

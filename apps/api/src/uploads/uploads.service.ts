@@ -32,7 +32,10 @@ function examples(): QuestionInput[] {
     return { input: `${n}\n${a.join(' ')}\n`, output: `${a.reduce((x, y) => x + y, 0)}\n`, weight: 2, isStress: true };
   };
   const coding: CodingQuestionInput = { ...(sumArray as CodingQuestionInput), hidden: [...small, ...[1, 2, 3, 4].map((s) => gen(1000, s))].slice(0, 12) };
-  return [QuestionInput.parse(coding), QuestionInput.parse(profileCard), QuestionInput.parse(topEarner)];
+  // Clearly labelled, and not practice questions: importing the unchanged template must not
+  // look like (or show up next to) the real bank questions they are based on.
+  const label = (q: unknown, title: string) => QuestionInput.parse({ ...(q as object), title, isPractice: false });
+  return [label(coding, 'Template example: add up an array'), label(profileCard, 'Template example: responsive card'), label(topEarner, 'Template example: best paid per department')];
 }
 
 export function runParse(buf: Buffer, format: FileFormat): Promise<ParseResult> {

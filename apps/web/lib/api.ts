@@ -84,6 +84,35 @@ export async function getBlobUrl(path: string): Promise<string> {
   return URL.createObjectURL(await res.blob());
 }
 
+/** Upload a file as the raw request body (bulk question import). */
+export async function uploadFile<T>(path: string, file: Blob): Promise<T> {
+  const send = async () =>
+    fetch(`${API_URL}${path}`, { method: 'POST', credentials: 'include', headers: { 'content-type': 'application/octet-stream', 'x-csrf-token': await csrf() }, body: file });
+  let res = await send();
+  if (res.status === 401 && (await refresh())) res = await send();
+  const data = (await res.json().catch(() => ({}))) as Record<string, unknown>;
+  if (!res.ok) throw new ApiError(res.status, String(data.title ?? res.statusText), (data.detail as string | undefined) ?? (res.status === 413 ? 'The file is too large.' : undefined), data);
+  return data as T;
+}
+
+/** Download an API file (templates, exports, reports) and save it. */
+export async function downloadFile(path: string, filename: string): Promise<void> {
+  let res = await raw('GET', path);
+  if (res.status === 401 && (await refresh())) res = await raw('GET', path);
+  if (!res.ok) {
+    const data = (await res.json().catch(() => ({}))) as Record<string, unknown>;
+    throw new ApiError(res.status, String(data.title ?? res.statusText), data.detail as string | undefined, data);
+  }
+  const url = URL.createObjectURL(await res.blob());
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 10_000);
+}
+
 /** Make sure the access cookie is fresh (used before opening a WebSocket). */
 export async function ensureSession(): Promise<boolean> {
   try {

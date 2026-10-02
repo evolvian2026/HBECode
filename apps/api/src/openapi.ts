@@ -82,6 +82,15 @@ const ops: Op[] = [
   { method: 'post', path: '/attempts/{id}/warn', summary: 'Send a warning to the student', tag: 'proctoring', perm: 'test:proctor', body: WarnRequest },
   { method: 'post', path: '/attempts/{id}/extend', summary: 'Extend the deadline', tag: 'proctoring', perm: 'test:proctor', body: ExtendRequest },
   { method: 'post', path: '/attempts/{id}/terminate', summary: 'End the attempt', tag: 'proctoring', perm: 'test:proctor', body: TerminateRequest },
+  // Phase 5: bulk upload and export. Uploads take the raw file as the body (application/octet-stream).
+  { method: 'get', path: '/uploads/templates/{format}', summary: 'Excel or Word template (format = xlsx | docx) with instructions and examples', tag: 'uploads', perm: 'question:write' },
+  { method: 'post', path: '/uploads', summary: 'Upload a question file (raw body; ?format=xlsx|docx|json&filename=); parsed in the background', tag: 'uploads', perm: 'question:write', query: z.object({ format: z.enum(['xlsx', 'docx', 'json']), filename: z.string().optional() }), status: 202 },
+  { method: 'get', path: '/uploads', summary: 'Recent uploads', tag: 'uploads', perm: 'question:write' },
+  { method: 'get', path: '/uploads/{id}', summary: 'Upload status and per-row preview (errors, warnings, duplicates, updates)', tag: 'uploads', perm: 'question:write' },
+  { method: 'get', path: '/uploads/{id}/report', summary: 'Problem report (xlsx)', tag: 'uploads', perm: 'question:write' },
+  { method: 'post', path: '/uploads/{id}/confirm', summary: 'Import the ready rows (optionally validate + publish)', tag: 'uploads', perm: 'question:write', body: z.object({ publish: z.boolean().default(false) }), status: 202 },
+  { method: 'delete', path: '/uploads/{id}', summary: 'Discard an upload', tag: 'uploads', perm: 'question:write', status: 204 },
+  { method: 'get', path: '/exports/questions', summary: 'Export questions with hidden tests and solutions (editable questions only; audited)', tag: 'uploads', perm: 'question:write', query: z.object({ format: z.enum(['xlsx', 'docx', 'json']), ids: z.string() }) },
   { method: 'get', path: '/attempts/{id}/snapshots/{snapshotId}', summary: 'Webcam snapshot (image/jpeg; viewing is audited)', tag: 'proctoring', perm: 'test:proctor' },
 ];
 
@@ -113,7 +122,7 @@ export function buildOpenApi(): Record<string, unknown> {
     openapi: '3.1.0',
     info: {
       title: 'HBECode API',
-      version: '0.4.0',
+      version: '0.5.0',
       description:
         'Cookie-session API. Unsafe methods require the `x-csrf-token` header (from GET /auth/csrf) and an allowed Origin. Executor endpoints (/internal/executor/*) are bearer-token only and are intentionally not documented here. Realtime pushes: WebSocket at /api/v1/ws (session cookie + allowed Origin); send {"op":"sub","channel":"attempt","attemptId","token"} or {"op":"sub","channel":"monitor","testId"}.',
     },

@@ -102,6 +102,18 @@ Each item must end in a contained verdict (`RE`/`TLE`/`MLE`/`OLE`), with no host
 
 **Limits that remain (by design):** a second physical device used to search or message, a virtual machine, screen sharing to a helper, or a modified browser that suppresses events consistently are not detectable from a web page. Flags are evidence for human review, not proof.
 
+## 5c. Phase 5: bulk upload and export (as built and tested)
+
+| # | Threat | Mitigation | Verified by |
+|---|---|---|---|
+| U1 | **Zip bomb** / huge files exhaust API memory or CPU | 10 MB upload cap at the HTTP layer; inflate limits enforced while streaming (64 MB per part, 160 MB total, 500 entries); parsing in a worker thread with a 384 MB heap limit and 2-minute timeout; ≤ 500 questions per file | `format.test.ts` (70 MB part from a < 200 KB zip refused), `uploads.test.ts` (413 for oversize, bomb → `failed` with reason, API keeps serving) |
+| U2 | **XXE / entity expansion** in OOXML parts | Any `<!DOCTYPE`/`<!ENTITY` refused before parsing; the XML parser does not process entities (we decode only the five predefined ones and numeric references) | `format.test.ts` (billion-laughs and `SYSTEM "file:///etc/passwd"` refused for xlsx and docx) |
+| U3 | **Formula / CSV injection** when an export is opened in Excel | Exports write every value as an inline string (never a formula); imported formulas are not evaluated (cached value + warning) | `format.test.ts` (`=SUM(A1)` survives as text; formula cell → warning) |
+| U4 | Uploading into another tenant, reading another tenant's upload, or a student/associate uploading | `question:write` only; jobs and rows under RLS (tenant teachers; global = platform); import runs under the author's RLS context; foreign ids → 404 | `uploads-rls.test.ts`, `uploads.test.ts` (other tenant 404 on get/report/confirm/discard; associates and students 403) |
+| U5 | **Leaking hidden tests/solutions through exports** | Authors only; only questions the author can edit (a teacher cannot export a global question); audited; files sent `private, no-store` | `uploads.test.ts` (associate/student 403, other tenant 404, global question 403, audit row) |
+| U6 | Overwriting someone else's question via a forged `id` | `id` is honoured only if the author can edit that question under RLS (same tenant, or super admin for global); otherwise a new question is created with a warning; the type cannot change | `uploads.test.ts` (round trip into another tenant creates new questions; re-import by the owner updates) |
+| U7 | Hidden data lingering after import | File dropped after parsing; row payloads cleared on import/discard; jobs deleted after 7 days | `uploads.test.ts` (no payload left after import) |
+
 ## 6. Security checklist (gate for each phase)
 
 - [ ] All endpoints have an explicit permission decorator (CI check: an unannotated route fails the build)

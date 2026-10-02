@@ -1,6 +1,6 @@
 # HBECode — Architecture (Phase 1)
 
-> Status: approved Phase 1 design; decision logs for later phases are in §15.4–15.6.
+> Status: approved Phase 1 design; decision logs for later phases are in §15.4–15.7.
 > Date: 2026-10-01. Companion document: [`threat-model.md`](./threat-model.md).
 
 ## Contents
@@ -745,6 +745,20 @@ flowchart TB
 | New permissions `test:manage` (teacher, super admin), `test:proctor` (teacher, associate, institution admin, super admin) and `test:attempt` (student). Proctor actions run under the proctor's RLS context (attempt/session updates and `source='proctor'` events are allowed by policy only for tenant staff). | Matches the permission matrix in §9 (associates proctor; only teachers author tests). |
 | Per-IP login limit raised from 30 to **300 per 5 min** and made configurable (`LOGIN_RATE_LIMIT_PER_IP`). | Found by the Phase 4 browser tests: a lab of students behind one college NAT shares an IP and would be locked out at the start of a test. Per-account limits and lockout still stop guessing. |
 | **Plagiarism detection is not built in this phase.** | The owner's Phase 4 scope covered tests, proctoring and monitoring; plagiarism (winnowing) fits better with reports (Phase 6), where its results are shown. |
+
+### 15.7 Design changes made during Phase 5 (decision log)
+
+| Change | Reason |
+|---|---|
+| **`packages/question-format`**: one tabular view of the canonical `QuestionInput` (Zod), shared by Excel (one sheet per table) and Word (one table per block): *Questions*, *Coding tests*, *Web checks*, *DB datasets*, *Code*, *Web files*, linked by a per-file `key`. Long values continue over rows (`part`). JSON is the canonical form itself. The format guide's column reference is generated from the same spec and a test fails if they drift. | One mapping means Excel and Word cannot disagree, and **export → import is lossless by construction** (tested for every seed question, a hostile-strings question and through the API). |
+| **XLSX and DOCX are read and written by our own code** on `jszip` + `fast-xml-parser`, not `exceljs`/`docx`/`mammoth`. Inline strings, `_xHHHH_` escapes (as Excel does), no formulas written; formulas found on import use their cached value with a warning. Word cells: one paragraph per line, tabs kept; values Word cannot hold become `[[base64]]…`. | `exceljs` is unmaintained since 2023 and unzips internally (no inflate limits). Our reader touches only the parts it needs through one guarded unzip, so limits and XML rules apply to every file. |
+| **Untrusted files:** magic-byte check, size cap (`UPLOAD_MAX_BYTES`, 10 MB) at the HTTP layer (raw body, no multipart parser), inflate limits checked while streaming (64 MB per part, 160 MB total, 500 entries), any DTD rejected (no entity expansion, no XXE), ≤ 500 questions per file, and **parsing runs in a worker thread** with a 384 MB heap limit and a 2-minute timeout. | A zip bomb or pathological file can only kill its own worker; the API event loop (heartbeats, grading results) is never blocked. |
+| **Two-step import**: upload → parse → preview (per row: ready / invalid / duplicate, create / update, errors and warnings with *sheet, row, column*) → the author confirms → import → optional sandbox validation + publish. Jobs live in Postgres (`upload_jobs`, `upload_rows`, RLS: teachers of the tenant; global uploads platform-only) with a lease; a poller resumes jobs after a restart. | Teachers see every problem before anything is created, and a big import survives an API restart (Render free sleeps). |
+| **Imports run under the confirming author's RLS context** (stored as the job's actor) through the same `QuestionsService.create/update/validate` as the editor. | Same tenant rules, duplicate checks, version freezing and audit entries as manual authoring; no second write path to secure. |
+| **Updates via `id`**: exported rows carry the question id; re-importing a row whose id the author can edit updates it (published → new version). Other ids are ignored with a warning and the row is created. Duplicates = same title + statement (the existing content hash) in the tenant or twice in the file. | Bulk editing through Excel works, and moving questions between institutions or environments does not need id mapping. |
+| **Exports include hidden tests, drivers and reference solutions**, so they are limited to authors and to questions they can edit (teachers: own tenant; super admin: global bank), max 200 per request, and audited (`question.export`). | Exports are as sensitive as the question bank itself. |
+| Retention: the uploaded file is dropped as soon as it is parsed; question payloads in `upload_rows` are cleared on import or discard; jobs are deleted after 7 days. | Hidden tests and solutions should not linger in a second place. |
+| The template's coding example replaces the seed's 200,000-number stress tests with generated 1,000-number ones (correct sums). | Keeps the template at 43 KB (Excel) / 39 KB (Word); a browser test validates all three examples in the real sandbox. |
 
 ---
 

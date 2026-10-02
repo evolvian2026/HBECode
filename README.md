@@ -4,7 +4,9 @@ A multi-tenant online coding assessment platform. Students write code in a brows
 secure sandbox against hidden tests, and get feedback in about a second. Institutions manage their
 own teachers, students and batches; teachers manage the question bank.
 
-**Status: Phase 4 of 8 (tests, proctoring and realtime monitoring) — done, awaiting review.** See the [Phase 4 report](docs/phase-4-report.md) (and [Phase 3](docs/phase-3-report.md), [Phase 2](docs/phase-2-report.md)) for what was built and measured.
+**Status: Phase 5 of 8 (bulk upload, validator, templates) — done, awaiting review.** See the [Phase 5 report](docs/phase-5-report.md) (and [Phase 4](docs/phase-4-report.md), [Phase 3](docs/phase-3-report.md), [Phase 2](docs/phase-2-report.md)) for what was built and measured.
+
+Bulk **import and export** of questions in Excel, Word or JSON, with downloadable templates, a per-row preview of every problem, a problem report, and optional sandbox validation + publishing on import. See the [question format guide](docs/question-format.md).
 
 Timed, proctored **tests**: teachers schedule tests from the question bank and assign them to batches or students; deadlines are enforced by the server; a second device is blocked until a proctor approves it; proctors watch a live monitor (WebSocket) and can approve devices, warn, extend time or end an attempt. Browser proctoring deters cheating but cannot guarantee a clean test.
 
@@ -15,6 +17,7 @@ Question types: **coding** (C, C++, Java, Python, JavaScript, Go, Rust, C#), **w
 | [Architecture](docs/architecture.md) | design, data model, sandbox, free-tier limits, AWS plan, decision log |
 | [Threat model](docs/threat-model.md) | STRIDE table, sandbox escape corpus, security checklist |
 | [Deployment](docs/deployment.md) | pilot on Render + Supabase + Oracle Cloud, step by step |
+| [Question format](docs/question-format.md) | Excel / Word / JSON import and export, every column |
 | [OpenAPI](docs/openapi.json) | generated from the same Zod schemas the API validates with |
 
 ## Run it locally (about 10 minutes)
@@ -52,7 +55,7 @@ Needs Node 22, pnpm 10, PostgreSQL 16 and Redis 7.
 
 ```bash
 pnpm install
-pnpm --filter @hbe/shared build && pnpm --filter @hbe/web-runtime build && pnpm --filter @hbe/db build
+pnpm --filter @hbe/shared build && pnpm --filter @hbe/web-runtime build && pnpm --filter @hbe/db build && pnpm --filter @hbe/question-format build
 createuser/createdb …   # role hbe_owner LOGIN CREATEROLE CREATEDB; database hbe_dev owned by it
 DATABASE_ADMIN_URL=postgres://hbe_owner:…@127.0.0.1/hbe_dev HBE_APP_DB_PASSWORD=… pnpm db:migrate
 DATABASE_URL=postgres://hbe_app:…@127.0.0.1/hbe_dev EXECUTOR_TOKENS=<32+ chars> pnpm dev:api
@@ -71,6 +74,7 @@ apps/executor   sandbox agent: nsjail + hbe-run + seccomp, 8 pinned toolchains, 
 packages/db     SQL migrations (tables + RLS), Drizzle schema, seed questions
 packages/shared roles/permissions, runtimes, Zod schemas (coding/web/DB questions), result comparison,
                 executor job contract
+packages/question-format  Excel / Word / JSON question import and export (templates, error report)
 packages/web-runtime  builds one self-contained document from web files (preview and grader share it)
 ```
 
@@ -80,6 +84,7 @@ packages/web-runtime  builds one self-contained document from web files (preview
 |---|---|---|
 | `pnpm lint` | ESLint (incl. a ban on `sql.raw`) | — |
 | `pnpm --filter @hbe/shared test` | output/result comparison, Mongo query guard, roles, publish rules | — |
+| `pnpm --filter @hbe/question-format test` | lossless Excel/Word/JSON round trips, error locations, zip bomb / DTD rejection, templates | — |
 | `pnpm --filter @hbe/web-runtime test` | HTML inlining, React multi-file build, compile errors | — |
 | `pnpm --filter @hbe/db test` | RLS forced on every table, tenant isolation, hidden data, append-only audit, test/attempt/proctoring visibility and deadline rules | Postgres |
 | `pnpm --filter @hbe/api test` | auth (CSRF, lockout, refresh reuse, MFA), RBAC matrix, full question → submission flow, tests/attempts (tenant leaks, second device, timer tampering, violation policy, webcam, WebSocket) | Postgres, Redis |

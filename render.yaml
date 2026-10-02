@@ -22,6 +22,8 @@ services:
         sync: false
       - key: DATABASE_POOL_SIZE
         value: '5'
+      - key: UPLOAD_MAX_BYTES # 5 MB: the free instance has 512 MB of RAM in total (docs/deployment.md)
+        value: '5242880'
       - key: REDIS_URL
         fromService:
           type: keyvalue
