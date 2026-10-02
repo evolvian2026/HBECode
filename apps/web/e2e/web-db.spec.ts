@@ -117,7 +117,19 @@ test('student builds a React app with live preview, then submits it', async ({ p
   await page.getByRole('tab', { name: 'App.jsx' }).click();
   await setCode(page, CART_APP);
 
-  // The preview rebuilds and is interactive.
+  // The preview rebuilds (350 ms after the last edit, in a new iframe) and is interactive. Wait
+  // until it has settled: clicking an intermediate build loses the clicks when it is replaced.
+  await expect
+    .poll(() =>
+      page.evaluate(async () => {
+        const f = document.querySelector('[data-testid="preview"]') as HTMLElement | null;
+        if (!f) return false;
+        f.dataset.probe = '1';
+        await new Promise((r) => setTimeout(r, 1000));
+        return document.querySelector('[data-testid="preview"]')?.getAttribute('data-probe') === '1';
+      }),
+    )
+    .toBe(true);
   await expect(preview.getByRole('button', { name: 'Add Notebook to cart' })).toHaveCount(1, { timeout: 15_000 });
   await preview.getByRole('button', { name: 'Add Notebook to cart' }).click();
   await preview.getByRole('button', { name: 'Add Notebook to cart' }).click();

@@ -3,7 +3,8 @@
 import { VERDICT_LABELS, type ClientSubmission, type Verdict } from '@hbe/shared';
 import Link from 'next/link';
 import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react';
-import { ApiError, post, put, watchSubmission } from '@/lib/api';
+import { api, ApiError, put, watchSubmission } from '@/lib/api';
+import { examHeaders, useExam } from '@/components/exam/context';
 import type { SessionUser } from '@hbe/shared';
 import { Difficulty, ErrorBox, Spinner } from '@/components/ui';
 
@@ -39,29 +40,39 @@ export function verdictTone(v: Verdict | null | undefined) {
 export function useDraftSaver(questionId: string, user: SessionUser) {
   const [saved, setSaved] = useState<'saved' | 'saving' | 'offline' | ''>('');
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const exam = useExam();
   useEffect(() => () => {
     if (timer.current) clearTimeout(timer.current);
   }, []);
   const save = useCallback(
     (key: string, code: string) => {
-      store.set(`hbe-draft:${questionId}:${key}`, code);
+      store.set(`${draftPrefix(exam?.attemptId)}${questionId}:${key}`, code);
       if (user.role === 'guest') return;
       setSaved('saving');
       if (timer.current) clearTimeout(timer.current);
       timer.current = setTimeout(() => {
-        put(`/api/v1/drafts/${questionId}/${key}`, { code })
+        const req = exam
+          ? api('PUT', `/api/v1/attempts/${exam.attemptId}/drafts/${questionId}/${key}`, { code }, examHeaders(exam))
+          : put(`/api/v1/drafts/${questionId}/${key}`, { code });
+        req
           .then(() => setSaved('saved'))
-          .catch(() => setSaved('offline'));
+          .catch((e) => {
+            setSaved('offline');
+            if (exam && e instanceof ApiError && e.status === 409) exam.onSessionError(e.detail ?? '');
+          });
       }, 1500);
     },
-    [questionId, user],
+    [questionId, user, exam],
   );
   const label = saved === 'saving' ? 'Saving…' : saved === 'saved' ? 'Saved' : saved === 'offline' ? 'Saved locally' : '';
   return { save, label };
 }
 
-export const initialDraft = (drafts: Draft[], questionId: string, key: string, fallback: string) =>
-  drafts.find((d) => d.runtime === key)?.code ?? store.get(`hbe-draft:${questionId}:${key}`) ?? fallback;
+/** Local draft keys: practice and each test attempt are kept apart. */
+export const draftPrefix = (attemptId?: string) => (attemptId ? `hbe-exam-draft:${attemptId}:` : 'hbe-draft:');
+
+export const initialDraft = (drafts: Draft[], questionId: string, key: string, fallback: string, attemptId?: string) =>
+  drafts.find((d) => d.runtime === key)?.code ?? store.get(`${draftPrefix(attemptId)}${questionId}:${key}`) ?? fallback;
 
 /** Create a run/submit and follow it over SSE (polling fallback). */
 export function useExecution(questionId: string) {
@@ -69,6 +80,7 @@ export function useExecution(questionId: string) {
   const [busy, setBusy] = useState<'run' | 'submit' | null>(null);
   const [error, setError] = useState<unknown>(null);
   const stop = useRef<(() => void) | null>(null);
+  const exam = useExam();
   useEffect(() => () => stop.current?.(), []);
   const execute = async (kind: 'run' | 'submit', runtime: string, code: string, extra: Record<string, unknown> = {}) => {
     setBusy(kind);
@@ -76,7 +88,9 @@ export function useExecution(questionId: string) {
     setResult(null);
     stop.current?.();
     try {
-      const { id } = await post<{ id: string }>('/api/v1/submissions', { questionId, runtime, code, kind, ...extra });
+      const { id } = exam
+        ? await api<{ id: string }>('POST', '/api/v1/submissions', { questionId, runtime, code, kind, attemptId: exam.attemptId, ...extra }, examHeaders(exam))
+        : await api<{ id: string }>('POST', '/api/v1/submissions', { questionId, runtime, code, kind, ...extra });
       stop.current = watchSubmission<ClientSubmission>(id, (s) => {
         setResult(s);
         if (s.status === 'done' || s.status === 'failed') setBusy(null);
@@ -84,22 +98,24 @@ export function useExecution(questionId: string) {
     } catch (e) {
       setError(e);
       setBusy(null);
+      if (exam && e instanceof ApiError && e.status === 409) exam.onSessionError(e.detail ?? '');
     }
   };
   return { result, busy, error, execute };
 }
 
 export function TopBar({ title, difficulty, preview, busy, onRun, onSubmit, children }: { title: string; difficulty: string; preview: boolean; busy: 'run' | 'submit' | null; onRun: () => void; onSubmit: () => void; children?: ReactNode }) {
+  const exam = useExam();
   return (
     <div className="flex h-11 items-center gap-3 border-b border-slate-200 px-3 dark:border-slate-800">
-      <Link href="/practice" className="text-sm text-slate-500 hover:text-slate-900 dark:hover:text-white">← Practice</Link>
+      {!exam && <Link href="/practice" className="text-sm text-slate-500 hover:text-slate-900 dark:hover:text-white">← Practice</Link>}
       <span className="font-medium">{title}</span>
       <Difficulty value={difficulty} />
       {preview && <span className="rounded bg-amber-100 px-1.5 text-xs text-amber-800">preview (unpublished)</span>}
       {children}
       <div className="ml-auto flex items-center gap-2">
         <button className="btn-secondary" disabled={busy !== null} onClick={onRun}>{busy === 'run' ? <Spinner /> : '▶'} Run</button>
-        <button className="btn-primary" disabled={busy !== null} onClick={onSubmit}>{busy === 'submit' ? <Spinner /> : null} Submit</button>
+        <button className="btn-primary" disabled={busy !== null} onClick={onSubmit}>{busy === 'submit' ? <Spinner /> : null} {exam ? 'Submit answer' : 'Submit'}</button>
       </div>
     </div>
   );

@@ -31,6 +31,8 @@ const Env = z.object({
   TRUST_PROXY: bool.default(false),
   LOG_LEVEL: z.enum(['fatal', 'error', 'warn', 'info', 'debug', 'trace', 'silent']).default('info'),
   SWEEPER_INTERVAL_MS: z.coerce.number().int().default(10_000),
+  /** Sign-ins per IP per 5 minutes. A lab of students behind one NAT shares an IP. */
+  LOGIN_RATE_LIMIT_PER_IP: z.coerce.number().int().min(5).default(300),
 });
 
 export type AppConfig = ReturnType<typeof loadConfig>;

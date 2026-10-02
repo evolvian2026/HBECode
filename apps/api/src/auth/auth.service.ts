@@ -96,7 +96,9 @@ export class AuthService {
 
   // ------------------------------------------------------------------ login
   async login(email: string, password: string, meta: RequestMeta): Promise<{ mfaToken: string } | IssuedSession> {
-    await this.limits.enforce(`login:ip:${meta.ip}`, 30, 300);
+    // Per IP: generous, because a whole classroom often shares one NAT address. Per-account
+    // limits and the lockout below are what stop password guessing.
+    await this.limits.enforce(`login:ip:${meta.ip}`, this.cfg.LOGIN_RATE_LIMIT_PER_IP, 300);
     await this.limits.enforce(`login:email:${sha256(email)}`, 20, 900);
 
     // Failure paths return instead of throwing so the failed-attempt counter and the audit

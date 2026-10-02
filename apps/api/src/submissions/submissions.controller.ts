@@ -86,8 +86,11 @@ export class SubmissionsController {
       await sub.off();
       return;
     }
-    send(first);
-    if (first.status === 'done' || first.status === 'failed') await close();
+    // Re-read after subscribing: a job that finished between the first read and the
+    // subscription would otherwise never be pushed (fast jobs finish in ~20 ms).
+    const current = first.status === 'done' || first.status === 'failed' ? first : await this.subs.get(u, id);
+    send(current);
+    if (current.status === 'done' || current.status === 'failed') await close();
   }
 
   @RequirePermission('practice:use')

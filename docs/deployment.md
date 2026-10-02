@@ -59,6 +59,8 @@ Keep them in a password manager. Never commit them. `.env*` files are git-ignore
    (Simpler: open a Render **Shell** on `hbe-api` and run `SEED_ADMIN_EMAIL=… SEED_ADMIN_PASSWORD=… node apps/api/dist/cli/seed.js`. It already has `DATABASE_URL` and `REDIS_URL`.)
 5. Sign in at `https://app.<domain>` and enrol MFA. It is required for super admins and institution admins.
 
+> **Tests and proctoring (Phase 4)** need nothing extra on Render: the live monitor and student pushes use a WebSocket on the same API service (`wss://api.<domain>/api/v1/ws`, which Render supports), and the app's CSP already allows it. Optional API settings: `LOGIN_RATE_LIMIT_PER_IP` (default 300 sign-ins per 5 minutes per IP; a lab behind one NAT shares an IP, so do not set it low) and `SWEEPER_INTERVAL_MS` (default 10 s; auto-submit at the deadline and missing-heartbeat flags run on this tick). Webcam snapshots are kept for 30 days by default; to change it for an institution, set `snapshotRetentionDays` in `hbe.tenants.settings` (there is no UI for it yet).
+
 > **Free plan limits:** the API sleeps after 15 minutes idle and takes about a minute to wake. **Open the site a few minutes before each session.** The free Key Value store is not persistent, but that's fine: Postgres is the source of truth and the sweeper re-queues any submission that was in flight.
 
 ## 4. Oracle Cloud executor VM {#executor}
@@ -124,7 +126,8 @@ Keep them in a password manager. Never commit them. `.env*` files are git-ignore
 2. Users → invite an institution admin, a teacher and a student, and open the invite links.
 3. As the student: Practice → *Sum of an Array* → Run → Submit → *Accepted*.
 4. Practice → *React Shopping Cart*: the preview renders on the right. Practice → *Top Earner per Department* → PostgreSQL: the expected table is shown under *Expected output*.
-5. Check that the preview frame may be framed by the app: `curl -sI https://app.<domain>/preview/frame.html | grep -i -E 'x-frame-options|content-security-policy'` must show `SAMEORIGIN` and `frame-ancestors 'self'`. If Render applied the `/*` rules instead (`DENY`), the preview stays blank; see the `/preview/*` rules in `render.yaml`.
+5. Tests (Phase 4): as the teacher, Tests → New test → add *Sum of an Array*, assign the student, Publish. As the student (preferably on a laptop), My tests → Start; the timer and fullscreen work. Open the same test in a second browser as the same student: it must say *Waiting for your proctor*. As the teacher, Tests → Monitor shows the device request; Approve it, and the first browser must say the test moved to another device.
+6. Check that the preview frame may be framed by the app: `curl -sI https://app.<domain>/preview/frame.html | grep -i -E 'x-frame-options|content-security-policy'` must show `SAMEORIGIN` and `frame-ancestors 'self'`. If Render applied the `/*` rules instead (`DENY`), the preview stays blank; see the `/preview/*` rules in `render.yaml`.
 
 ## Upgrading later
 

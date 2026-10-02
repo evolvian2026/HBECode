@@ -4,7 +4,9 @@ A multi-tenant online coding assessment platform. Students write code in a brows
 secure sandbox against hidden tests, and get feedback in about a second. Institutions manage their
 own teachers, students and batches; teachers manage the question bank.
 
-**Status: Phase 3 of 8 (web and DB question engines) — done.** See the [Phase 3 report](docs/phase-3-report.md) (and [Phase 2](docs/phase-2-report.md)) for what was built and measured.
+**Status: Phase 4 of 8 (tests, proctoring and realtime monitoring) — done, awaiting review.** See the [Phase 4 report](docs/phase-4-report.md) (and [Phase 3](docs/phase-3-report.md), [Phase 2](docs/phase-2-report.md)) for what was built and measured.
+
+Timed, proctored **tests**: teachers schedule tests from the question bank and assign them to batches or students; deadlines are enforced by the server; a second device is blocked until a proctor approves it; proctors watch a live monitor (WebSocket) and can approve devices, warn, extend time or end an attempt. Browser proctoring deters cheating but cannot guarantee a clean test.
 
 Question types: **coding** (C, C++, Java, Python, JavaScript, Go, Rust, C#), **web** (HTML/CSS/JavaScript and React, with a live preview, graded in headless Chromium) and **database** (PostgreSQL, MySQL, MongoDB, Pandas).
 
@@ -61,7 +63,8 @@ docker compose up -d executor   # or run the executor container by hand (docs/de
 ## Repository layout
 
 ```
-apps/api        NestJS + Fastify API (auth, RBAC, tenancy, questions, submissions, executor dispatch)
+apps/api        NestJS + Fastify API (auth, RBAC, tenancy, questions, submissions, executor dispatch,
+                tests/attempts/proctoring, WebSocket gateway)
 apps/web        Next.js static app (Monaco IDE, question editor, admin pages)
 apps/executor   sandbox agent: nsjail + hbe-run + seccomp, 8 pinned toolchains, jailed headless Chromium,
                 PostgreSQL/MySQL/MongoDB runner clients, pandas harness
@@ -78,8 +81,8 @@ packages/web-runtime  builds one self-contained document from web files (preview
 | `pnpm lint` | ESLint (incl. a ban on `sql.raw`) | — |
 | `pnpm --filter @hbe/shared test` | output/result comparison, Mongo query guard, roles, publish rules | — |
 | `pnpm --filter @hbe/web-runtime test` | HTML inlining, React multi-file build, compile errors | — |
-| `pnpm --filter @hbe/db test` | RLS forced on every table, tenant isolation, hidden data, append-only audit | Postgres |
-| `pnpm --filter @hbe/api test` | auth (CSRF, lockout, refresh reuse, MFA), RBAC matrix, full question → submission flow | Postgres, Redis |
+| `pnpm --filter @hbe/db test` | RLS forced on every table, tenant isolation, hidden data, append-only audit, test/attempt/proctoring visibility and deadline rules | Postgres |
+| `pnpm --filter @hbe/api test` | auth (CSRF, lockout, refresh reuse, MFA), RBAC matrix, full question → submission flow, tests/attempts (tenant leaks, second device, timer tampering, violation policy, webcam, WebSocket) | Postgres, Redis |
 | `pnpm --filter @hbe/executor test:sandbox` | 8 languages + escape attempts (fork bomb, network, seccomp, …), web grader (network isolation, anti-tampering), DB runners (isolation, timeouts, Mongo guard, pandas) | Docker + `hbe-executor:dev` image (starts its own runner containers) |
 | `pnpm --filter @hbe/api test:e2e` | API + real sandbox for coding, web and DB questions: seed validation, grading, leak checks, latency | Docker + image |
-| `pnpm --filter @hbe/web test:e2e` | browser flows (coding/web/DB solving, preview sandbox, authoring, MFA, admin) | running stack (`docker compose up` + `seed`) |
+| `pnpm --filter @hbe/web test:e2e` | browser flows (coding/web/DB solving, preview sandbox, authoring, MFA, admin, taking a test, second device approval, violations → auto-submit) | running stack (`docker compose up` + `seed`) on a fresh volume |

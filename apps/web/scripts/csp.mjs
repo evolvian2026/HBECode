@@ -25,7 +25,10 @@ export function policy(scriptHashes) {
     "style-src 'self' 'unsafe-inline'",
     "img-src 'self' data: blob:",
     "font-src 'self' data:",
-    `connect-src 'self' ${api}`,
+    // The API, and its WebSocket endpoint (proctoring and the live monitor).
+    `connect-src 'self' ${api} ${api.replace(/^http/, 'ws')}`,
+    // Webcam preview for proctored tests (MediaStream, no network).
+    "media-src 'self' blob: mediastream:",
     "worker-src 'self' blob:",
     "frame-src 'self'",
     "object-src 'none'",

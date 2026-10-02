@@ -18,7 +18,7 @@ const ROLE_LABEL: Record<string, string> = {
 export function Nav() {
   const { user, logout, can, setUser } = useSession();
   const path = usePathname();
-  if (path?.startsWith('/solve')) return null; // the IDE uses the full screen
+  if (path?.startsWith('/solve') || path?.startsWith('/exam')) return null; // the IDE uses the full screen
   const link = (href: string, label: string) => (
     <Link href={href} className={`rounded px-2 py-1 text-sm ${path?.startsWith(href) ? 'bg-slate-100 font-medium dark:bg-slate-800' : 'text-slate-600 hover:text-slate-900 dark:text-slate-300 dark:hover:text-white'}`}>
       {label}
@@ -42,6 +42,7 @@ export function Nav() {
         {user && !user.mfaSetupRequired && (
           <nav className="flex flex-wrap items-center gap-1" aria-label="Main">
             {can('practice:use') && link('/practice', 'Practice')}
+            {(can('test:attempt') || can('test:proctor')) && link('/tests', can('test:proctor') ? 'Tests' : 'My tests')}
             {can('question:read_full') && link('/questions', 'Question bank')}
             {(user.role === 'client_admin' || user.role === 'super_admin') && link('/admin/users', 'Users')}
             {(user.role === 'client_admin' || user.role === 'teacher') && link('/admin/batches', 'Batches')}

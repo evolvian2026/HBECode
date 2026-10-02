@@ -5,6 +5,7 @@ import { useState } from 'react';
 import { CodeEditor } from '@/components/code-editor';
 import { Markdown } from '@/components/markdown';
 import { initialDraft, ResultShell, SaveLabel, store, TopBar, useDraftSaver, useExecution, verdictTone, type Draft } from './common';
+import { useExam } from '@/components/exam/context';
 
 export interface DbQuestion {
   type: 'db';
@@ -48,11 +49,12 @@ export function ResultTable({ result, label, max = 50 }: { result: { columns: st
 }
 
 export function DbSolve({ q, drafts, user }: { q: DbQuestion; drafts: Draft[]; user: SessionUser }) {
+  const exam = useExam();
   const [dialect, setDialect] = useState<DbDialect>(() => {
     const last = store.get('hbe-dialect');
     return (q.dialects.find((d) => d.id === last) ?? q.dialects[0])!.id;
   });
-  const [codes, setCodes] = useState<Record<string, string>>(() => Object.fromEntries(q.dialects.map((d) => [d.id, initialDraft(drafts, q.id, d.id, d.starter)])));
+  const [codes, setCodes] = useState<Record<string, string>>(() => Object.fromEntries(q.dialects.map((d) => [d.id, initialDraft(drafts, q.id, d.id, d.starter, exam?.attemptId)])));
   const [tab, setTab] = useState<'examples' | 'result'>('examples');
   const { save, label } = useDraftSaver(q.id, user);
   const { result, busy, error, execute } = useExecution(q.id);
@@ -76,7 +78,7 @@ export function DbSolve({ q, drafts, user }: { q: DbQuestion; drafts: Draft[]; u
           : 'Write a single SELECT query. The database is read-only.';
 
   return (
-    <div className="flex h-screen flex-col">
+    <div className="flex h-[var(--solve-h,100vh)] flex-col">
       <TopBar title={q.title} difficulty={q.difficulty} preview={q.preview} busy={busy} onRun={() => run('run')} onSubmit={() => run('submit')} />
       <div className="flex min-h-0 flex-1 flex-col md:flex-row">
         <section className="min-h-0 overflow-y-auto border-slate-200 p-4 md:w-[42%] md:border-r dark:border-slate-800" aria-label="Problem">

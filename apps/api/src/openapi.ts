@@ -6,6 +6,8 @@ import {
   AcceptInviteRequest, BatchMembersRequest, ChangePasswordRequest, QuestionInput, CreateBatchRequest, CreateSubmissionRequest,
   CreateTenantRequest, CreateUserRequest, LoginRequest, MfaEnableRequest, MfaVerifyRequest, QuestionListQuery, SaveDraftRequest,
   SessionUser, SwitchTenantRequest, UpdateMembershipRequest, UpdateTenantRequest, UserListQuery,
+  AssignTestRequest, ExtendRequest, HeartbeatRequest, ProctorEventsRequest, SaveAttemptDraftRequest, SnapshotRequest, StartAttemptRequest,
+  TerminateRequest, TestInput, WarnRequest,
 } from '@hbe/shared';
 import { z } from 'zod';
 
@@ -53,6 +55,34 @@ const ops: Op[] = [
   { method: 'get', path: '/drafts/{questionId}', summary: 'Autosaved drafts', tag: 'submissions' },
   { method: 'put', path: '/drafts/{questionId}/{runtime}', summary: 'Autosave a draft', tag: 'submissions', body: SaveDraftRequest, status: 204 },
   { method: 'get', path: '/runtimes', summary: 'Pinned language versions', tag: 'meta', auth: 'none' },
+  // Phase 4: tests, attempts, proctoring. Student attempt calls carry the device token in the
+  // `x-attempt-token` header (returned by POST /tests/{id}/attempt); other devices get 409.
+  { method: 'get', path: '/tests', summary: 'Tests of the active institution', tag: 'tests', perm: 'test:proctor' },
+  { method: 'post', path: '/tests', summary: 'Create a draft test (window, duration, questions, proctoring settings)', tag: 'tests', perm: 'test:manage', body: TestInput, status: 201 },
+  { method: 'get', path: '/tests/{id}', summary: 'Test details', tag: 'tests', perm: 'test:proctor' },
+  { method: 'put', path: '/tests/{id}', summary: 'Edit a draft test', tag: 'tests', perm: 'test:manage', body: TestInput },
+  { method: 'delete', path: '/tests/{id}', summary: 'Delete a draft test', tag: 'tests', perm: 'test:manage', status: 204 },
+  { method: 'post', path: '/tests/{id}/assign', summary: 'Replace the assigned batches/students', tag: 'tests', perm: 'test:manage', body: AssignTestRequest },
+  { method: 'post', path: '/tests/{id}/publish', summary: 'Publish (pins every question version)', tag: 'tests', perm: 'test:manage' },
+  { method: 'post', path: '/tests/{id}/close', summary: 'Close now; open attempts are submitted', tag: 'tests', perm: 'test:manage' },
+  { method: 'get', path: '/tests/{id}/live', summary: 'Live monitor snapshot (attempts, flags, device requests)', tag: 'tests', perm: 'test:proctor' },
+  { method: 'post', path: '/tests/{id}/attempt', summary: 'Start or resume (active), or request approval for a new device (pending)', tag: 'attempts', perm: 'test:attempt', body: StartAttemptRequest },
+  { method: 'get', path: '/my/tests', summary: 'Tests assigned to me, with my attempt', tag: 'attempts', perm: 'test:attempt' },
+  { method: 'get', path: '/attempts/{id}', summary: 'My attempt (active device only)', tag: 'attempts', perm: 'test:attempt' },
+  { method: 'get', path: '/attempts/{id}/questions/{questionId}', summary: 'Question of the test (pinned version, no hidden data)', tag: 'attempts', perm: 'test:attempt' },
+  { method: 'get', path: '/attempts/{id}/drafts/{questionId}', summary: 'Autosaved drafts in this attempt', tag: 'attempts', perm: 'test:attempt' },
+  { method: 'put', path: '/attempts/{id}/drafts/{questionId}/{runtime}', summary: 'Autosave (refused after the deadline)', tag: 'attempts', perm: 'test:attempt', body: SaveAttemptDraftRequest, status: 204 },
+  { method: 'post', path: '/attempts/{id}/heartbeat', summary: 'Heartbeat (every 15 s); returns server time, deadline, notices', tag: 'attempts', perm: 'test:attempt', body: HeartbeatRequest },
+  { method: 'post', path: '/attempts/{id}/events', summary: 'Batched proctoring events (severity decided server-side)', tag: 'attempts', perm: 'test:attempt', body: ProctorEventsRequest },
+  { method: 'post', path: '/attempts/{id}/snapshots', summary: 'Webcam frame after a flagged event (tests with webcam=flagged only)', tag: 'attempts', perm: 'test:attempt', body: SnapshotRequest, status: 201 },
+  { method: 'post', path: '/attempts/{id}/submit', summary: 'Finish the test (final drafts are graded)', tag: 'attempts', perm: 'test:attempt' },
+  { method: 'get', path: '/attempts/{id}/timeline', summary: 'Proctoring timeline, devices, snapshots, submissions', tag: 'proctoring', perm: 'test:proctor' },
+  { method: 'post', path: '/attempts/{id}/devices/{requestId}/approve', summary: 'Approve a second device (the old one is locked out)', tag: 'proctoring', perm: 'test:proctor' },
+  { method: 'post', path: '/attempts/{id}/devices/{requestId}/deny', summary: 'Deny a second device', tag: 'proctoring', perm: 'test:proctor' },
+  { method: 'post', path: '/attempts/{id}/warn', summary: 'Send a warning to the student', tag: 'proctoring', perm: 'test:proctor', body: WarnRequest },
+  { method: 'post', path: '/attempts/{id}/extend', summary: 'Extend the deadline', tag: 'proctoring', perm: 'test:proctor', body: ExtendRequest },
+  { method: 'post', path: '/attempts/{id}/terminate', summary: 'End the attempt', tag: 'proctoring', perm: 'test:proctor', body: TerminateRequest },
+  { method: 'get', path: '/attempts/{id}/snapshots/{snapshotId}', summary: 'Webcam snapshot (image/jpeg; viewing is audited)', tag: 'proctoring', perm: 'test:proctor' },
 ];
 
 const json = (s: z.ZodType) => z.toJSONSchema(s, { io: 'input', unrepresentable: 'any' });
@@ -83,9 +113,9 @@ export function buildOpenApi(): Record<string, unknown> {
     openapi: '3.1.0',
     info: {
       title: 'HBECode API',
-      version: '0.2.0',
+      version: '0.4.0',
       description:
-        'Cookie-session API. Unsafe methods require the `x-csrf-token` header (from GET /auth/csrf) and an allowed Origin. Executor endpoints (/internal/executor/*) are bearer-token only and are intentionally not documented here.',
+        'Cookie-session API. Unsafe methods require the `x-csrf-token` header (from GET /auth/csrf) and an allowed Origin. Executor endpoints (/internal/executor/*) are bearer-token only and are intentionally not documented here. Realtime pushes: WebSocket at /api/v1/ws (session cookie + allowed Origin); send {"op":"sub","channel":"attempt","attemptId","token"} or {"op":"sub","channel":"monitor","testId"}.',
     },
     servers: [{ url: '/' }],
     paths,

@@ -6,6 +6,7 @@ import { FileTabsEditor } from '@/components/file-tabs-editor';
 import { Markdown } from '@/components/markdown';
 import { WebPreview } from '@/components/web-preview';
 import { initialDraft, ResultShell, SaveLabel, TopBar, useDraftSaver, useExecution, verdictTone, type Draft } from './common';
+import { useExam } from '@/components/exam/context';
 
 export interface WebQuestion {
   type: 'web';
@@ -37,8 +38,9 @@ function parseDraft(code: string, fallback: WebFile[]): WebFile[] {
 }
 
 export function WebSolve({ q, drafts, user }: { q: WebQuestion; drafts: Draft[]; user: SessionUser }) {
+  const exam = useExam();
   const entry = entryFile(q.framework);
-  const [files, setFiles] = useState<WebFile[]>(() => parseDraft(initialDraft(drafts, q.id, q.framework, ''), q.starterFiles));
+  const [files, setFiles] = useState<WebFile[]>(() => parseDraft(initialDraft(drafts, q.id, q.framework, '', exam?.attemptId), q.starterFiles));
   const [editorKey, setEditorKey] = useState(0);
   const [panel, setPanel] = useState<'preview' | 'result'>('preview');
   const [viewport, setViewport] = useState<(typeof VIEWPORTS)[number]['id']>('desktop');
@@ -56,7 +58,7 @@ export function WebSolve({ q, drafts, user }: { q: WebQuestion; drafts: Draft[];
   const vp = VIEWPORTS.find((v) => v.id === viewport)!;
 
   return (
-    <div className="flex h-screen flex-col">
+    <div className="flex h-[var(--solve-h,100vh)] flex-col">
       <TopBar title={q.title} difficulty={q.difficulty} preview={q.preview} busy={busy} onRun={() => run('run')} onSubmit={() => run('submit')}>
         <span className="text-xs text-slate-500">{q.framework === 'react' ? 'React 18' : 'HTML · CSS · JavaScript'}</span>
       </TopBar>

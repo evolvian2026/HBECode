@@ -5,6 +5,7 @@ import { useMemo, useState } from 'react';
 import { CodeEditor } from '@/components/code-editor';
 import { Markdown } from '@/components/markdown';
 import { initialDraft, ResultShell, SaveLabel, store, TopBar, useDraftSaver, useExecution, verdictTone, type Draft } from './common';
+import { useExam } from '@/components/exam/context';
 
 export interface CodingQuestion {
   type: 'coding';
@@ -23,7 +24,8 @@ export interface CodingQuestion {
 }
 
 export function CodingSolve({ q, drafts, user }: { q: CodingQuestion; drafts: Draft[]; user: SessionUser }) {
-  const [codes, setCodes] = useState<Record<string, string>>(() => Object.fromEntries(q.runtimes.map((r) => [r.id, initialDraft(drafts, q.id, r.id, r.stub)])));
+  const exam = useExam();
+  const [codes, setCodes] = useState<Record<string, string>>(() => Object.fromEntries(q.runtimes.map((r) => [r.id, initialDraft(drafts, q.id, r.id, r.stub, exam?.attemptId)])));
   const [runtime, setRuntime] = useState(() => {
     const last = store.get('hbe-runtime');
     return q.runtimes.some((r) => r.id === last) ? last! : ((q.runtimes.find((r) => r.id === 'python') ?? q.runtimes[0])?.id ?? '');
@@ -49,7 +51,7 @@ export function CodingSolve({ q, drafts, user }: { q: CodingQuestion; drafts: Dr
   if (!rt) return <p className="p-6 text-slate-500">This question has no languages configured.</p>;
 
   return (
-    <div className="flex h-screen flex-col">
+    <div className="flex h-[var(--solve-h,100vh)] flex-col">
       <TopBar title={q.title} difficulty={q.difficulty} preview={q.preview} busy={busy} onRun={() => run('run')} onSubmit={() => run('submit')} />
       <div className="flex min-h-0 flex-1 flex-col md:flex-row">
         <section className="min-h-0 overflow-y-auto border-slate-200 p-4 md:w-[42%] md:border-r dark:border-slate-800" aria-label="Problem">
