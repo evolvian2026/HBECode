@@ -43,6 +43,8 @@ CREATE TABLE hbe.rpt_tenant_daily (
   runs       integer NOT NULL DEFAULT 0,
   submits    integer NOT NULL DEFAULT 0,
   accepted   integer NOT NULL DEFAULT 0,
+  -- distinct users active that day (maintained with rpt_tenant_daily_users)
+  active_users integer NOT NULL DEFAULT 0,
   PRIMARY KEY (tenant_id, day)
 );
 -- Distinct active users per day (count rows; a set, so updates are idempotent).
@@ -52,6 +54,25 @@ CREATE TABLE hbe.rpt_tenant_daily_users (
   user_id    uuid NOT NULL REFERENCES hbe.users(id) ON DELETE CASCADE,
   PRIMARY KEY (tenant_id, day, user_id)
 );
+
+-- Last activity per user: "active in the last 7 / 30 days" without scanning daily rows.
+CREATE TABLE hbe.rpt_user_activity (
+  tenant_id  uuid NOT NULL REFERENCES hbe.tenants(id) ON DELETE CASCADE,
+  user_id    uuid NOT NULL REFERENCES hbe.users(id) ON DELETE CASCADE,
+  last_at    timestamptz NOT NULL,
+  PRIMARY KEY (tenant_id, user_id)
+);
+CREATE INDEX rpt_user_activity_last ON hbe.rpt_user_activity (tenant_id, last_at DESC);
+
+-- Per question: students who submitted and who solved it (too easy / too hard flags).
+CREATE TABLE hbe.rpt_question_totals (
+  tenant_id    uuid NOT NULL REFERENCES hbe.tenants(id) ON DELETE CASCADE,
+  question_id  uuid NOT NULL REFERENCES hbe.questions(id) ON DELETE CASCADE,
+  students     integer NOT NULL DEFAULT 0,
+  solved       integer NOT NULL DEFAULT 0,
+  PRIMARY KEY (tenant_id, question_id)
+);
+CREATE INDEX rpt_question_totals_students ON hbe.rpt_question_totals (tenant_id, students DESC);
 
 -- Whole platform per day (includes guests); super admins only.
 CREATE TABLE hbe.rpt_platform_daily (
@@ -112,12 +133,12 @@ CREATE INDEX attempts_test_status ON hbe.attempts (test_id, status);
 
 -- ---------------------------------------------------------------- grants and RLS
 GRANT SELECT, INSERT, UPDATE, DELETE ON hbe.rpt_question_daily, hbe.rpt_student_question, hbe.rpt_tenant_daily,
-  hbe.rpt_tenant_daily_users, hbe.rpt_platform_daily, hbe.plagiarism_runs, hbe.plagiarism_pairs TO hbe_app;
+  hbe.rpt_tenant_daily_users, hbe.rpt_user_activity, hbe.rpt_question_totals, hbe.rpt_platform_daily, hbe.plagiarism_runs, hbe.plagiarism_pairs TO hbe_app;
 
 DO $$
 DECLARE t text;
 BEGIN
-  FOREACH t IN ARRAY ARRAY['rpt_question_daily','rpt_student_question','rpt_tenant_daily','rpt_tenant_daily_users',
+  FOREACH t IN ARRAY ARRAY['rpt_question_daily','rpt_student_question','rpt_tenant_daily','rpt_tenant_daily_users','rpt_user_activity','rpt_question_totals',
     'rpt_platform_daily','plagiarism_runs','plagiarism_pairs']
   LOOP
     EXECUTE format('ALTER TABLE hbe.%I ENABLE ROW LEVEL SECURITY', t);
@@ -144,6 +165,15 @@ CREATE POLICY rpt_tenant_daily_write ON hbe.rpt_tenant_daily FOR ALL TO hbe_app
 CREATE POLICY rpt_tenant_daily_users_read ON hbe.rpt_tenant_daily_users FOR SELECT TO hbe_app
   USING (hbe.app_is_platform() OR (tenant_id = hbe.app_tenant() AND hbe.app_is_tenant_staff()));
 CREATE POLICY rpt_tenant_daily_users_write ON hbe.rpt_tenant_daily_users FOR ALL TO hbe_app
+  USING (hbe.app_role() = 'system') WITH CHECK (hbe.app_role() = 'system');
+
+CREATE POLICY rpt_user_activity_read ON hbe.rpt_user_activity FOR SELECT TO hbe_app
+  USING (hbe.app_is_platform() OR (tenant_id = hbe.app_tenant() AND hbe.app_is_tenant_staff()));
+CREATE POLICY rpt_user_activity_write ON hbe.rpt_user_activity FOR ALL TO hbe_app
+  USING (hbe.app_role() = 'system') WITH CHECK (hbe.app_role() = 'system');
+CREATE POLICY rpt_question_totals_read ON hbe.rpt_question_totals FOR SELECT TO hbe_app
+  USING (hbe.app_is_platform() OR (tenant_id = hbe.app_tenant() AND hbe.app_is_tenant_staff()));
+CREATE POLICY rpt_question_totals_write ON hbe.rpt_question_totals FOR ALL TO hbe_app
   USING (hbe.app_role() = 'system') WITH CHECK (hbe.app_role() = 'system');
 
 CREATE POLICY rpt_platform_daily_read ON hbe.rpt_platform_daily FOR SELECT TO hbe_app USING (hbe.app_is_platform());

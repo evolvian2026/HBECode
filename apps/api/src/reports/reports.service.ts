@@ -101,7 +101,24 @@ export class ReportsService implements OnModuleInit, OnModuleDestroy {
       await tx.execute(sql`
         INSERT INTO hbe.rpt_tenant_daily AS t (tenant_id, day, runs, submits, accepted) VALUES (${s.tenant_id}, ${s.d}::date, ${run}, ${submit}, ${ac})
         ON CONFLICT (tenant_id, day) DO UPDATE SET runs = t.runs + excluded.runs, submits = t.submits + excluded.submits, accepted = t.accepted + excluded.accepted`);
-      await tx.execute(sql`INSERT INTO hbe.rpt_tenant_daily_users (tenant_id, day, user_id) VALUES (${s.tenant_id}, ${s.d}::date, ${s.user_id}) ON CONFLICT DO NOTHING`);
+      const firstToday = await rows(tx, sql`INSERT INTO hbe.rpt_tenant_daily_users (tenant_id, day, user_id) VALUES (${s.tenant_id}, ${s.d}::date, ${s.user_id}) ON CONFLICT DO NOTHING RETURNING user_id`);
+      if (firstToday.length) await tx.execute(sql`UPDATE hbe.rpt_tenant_daily SET active_users = active_users + 1 WHERE tenant_id = ${s.tenant_id} AND day = ${s.d}::date`);
+      await tx.execute(sql`
+        INSERT INTO hbe.rpt_user_activity AS a (tenant_id, user_id, last_at) VALUES (${s.tenant_id}, ${s.user_id}, ${s.created_at})
+        ON CONFLICT (tenant_id, user_id) DO UPDATE SET last_at = greatest(a.last_at, excluded.last_at)`);
+      // Per-question student totals change when a student submits a question for the first time
+      // or solves it for the first time (prior state read under a row lock).
+      const [prev] = await rows<{ submits: number; solved: boolean }>(
+        tx,
+        sql`SELECT submits, solved FROM hbe.rpt_student_question WHERE tenant_id = ${s.tenant_id} AND user_id = ${s.user_id} AND question_id = ${s.question_id} FOR UPDATE`,
+      );
+      const newStudent = submit === 1 && (!prev || prev.submits === 0) ? 1 : 0;
+      const newSolved = ac === 1 && !prev?.solved ? 1 : 0;
+      if (newStudent || newSolved) {
+        await tx.execute(sql`
+          INSERT INTO hbe.rpt_question_totals AS q (tenant_id, question_id, students, solved) VALUES (${s.tenant_id}, ${s.question_id}, ${newStudent}, ${newSolved})
+          ON CONFLICT (tenant_id, question_id) DO UPDATE SET students = q.students + excluded.students, solved = q.solved + excluded.solved`);
+      }
       const verdicts = graded && s.verdict ? { [s.verdict]: 1 } : {};
       await tx.execute(sql`
         INSERT INTO hbe.rpt_question_daily AS q (tenant_id, question_id, day, runtime, runs, submits, accepted, score_sum, verdicts)
@@ -130,6 +147,8 @@ export class ReportsService implements OnModuleInit, OnModuleDestroy {
       await tx.execute(sql`DELETE FROM hbe.rpt_student_question ${onlyT}`);
       await tx.execute(sql`DELETE FROM hbe.rpt_tenant_daily ${onlyT}`);
       await tx.execute(sql`DELETE FROM hbe.rpt_tenant_daily_users ${onlyT}`);
+      await tx.execute(sql`DELETE FROM hbe.rpt_user_activity ${onlyT}`);
+      await tx.execute(sql`DELETE FROM hbe.rpt_question_totals ${onlyT}`);
       const base = sql`SELECT tenant_id, user_id, question_id, runtime, kind, status, verdict, coalesce(score, 0) AS score, created_at, (created_at AT TIME ZONE ${tz})::date AS d
                        FROM hbe.submissions WHERE kind IN ('run', 'submit') AND status IN ('done', 'failed') AND tenant_id IS NOT NULL ${only}`;
       await tx.execute(sql`
@@ -164,6 +183,14 @@ export class ReportsService implements OnModuleInit, OnModuleDestroy {
                count(*) FILTER (WHERE kind = 'submit' AND status = 'done' AND verdict = 'AC')
         FROM b GROUP BY 1, 2`);
       await tx.execute(sql`WITH b AS (${base}) INSERT INTO hbe.rpt_tenant_daily_users (tenant_id, day, user_id) SELECT DISTINCT tenant_id, d, user_id FROM b`);
+      await tx.execute(sql`
+        UPDATE hbe.rpt_tenant_daily d SET active_users = x.n
+        FROM (SELECT tenant_id, day, count(*)::int AS n FROM hbe.rpt_tenant_daily_users ${onlyT} GROUP BY 1, 2) x
+        WHERE d.tenant_id = x.tenant_id AND d.day = x.day`);
+      await tx.execute(sql`WITH b AS (${base}) INSERT INTO hbe.rpt_user_activity (tenant_id, user_id, last_at) SELECT tenant_id, user_id, max(created_at) FROM b GROUP BY 1, 2`);
+      await tx.execute(sql`
+        INSERT INTO hbe.rpt_question_totals (tenant_id, question_id, students, solved)
+        SELECT tenant_id, question_id, count(*) FILTER (WHERE submits > 0), count(*) FILTER (WHERE solved) FROM hbe.rpt_student_question ${onlyT} GROUP BY 1, 2`);
       if (!tenantId) {
         await tx.execute(sql`DELETE FROM hbe.rpt_platform_daily`);
         await tx.execute(sql`
@@ -212,13 +239,13 @@ export class ReportsService implements OnModuleInit, OnModuleDestroy {
         tx,
         sql`WITH days AS (SELECT generate_series((now() AT TIME ZONE ${tz})::date - 29, (now() AT TIME ZONE ${tz})::date, interval '1 day')::date AS day)
             SELECT to_char(days.day, 'YYYY-MM-DD') AS day, coalesce(d.runs, 0)::int AS runs, coalesce(d.submits, 0)::int AS submits, coalesce(d.accepted, 0)::int AS accepted,
-                   (SELECT count(*)::int FROM hbe.rpt_tenant_daily_users u WHERE u.tenant_id = ${tenantId} AND u.day = days.day) AS active
+                   coalesce(d.active_users, 0)::int AS active
             FROM days LEFT JOIN hbe.rpt_tenant_daily d ON d.tenant_id = ${tenantId} AND d.day = days.day ORDER BY days.day`,
       );
       const [active] = await rows<{ d7: number; d30: number }>(
         tx,
-        sql`SELECT count(DISTINCT user_id) FILTER (WHERE day > (now() AT TIME ZONE ${tz})::date - 7)::int AS d7, count(DISTINCT user_id)::int AS d30
-            FROM hbe.rpt_tenant_daily_users WHERE tenant_id = ${tenantId} AND day > (now() AT TIME ZONE ${tz})::date - 30`,
+        sql`SELECT count(*) FILTER (WHERE last_at > now() - interval '7 days')::int AS d7, count(*)::int AS d30
+            FROM hbe.rpt_user_activity WHERE tenant_id = ${tenantId} AND last_at > now() - interval '30 days'`,
       );
       const recentTests = await rows<{ id: string; title: string; status: string; starts_at: Date; attempts: number; finished: number; avg_pct: string | null }>(
         tx,
@@ -242,11 +269,11 @@ export class ReportsService implements OnModuleInit, OnModuleDestroy {
   private async flaggedQuestions(tx: Tx, tenantId: string, limit: number) {
     const qs = await rows<{ question_id: string; title: string; type: string; difficulty: string; students: number; solved: number }>(
       tx,
-      sql`SELECT r.question_id, v.title, q.type, v.difficulty, r.students, r.solved FROM (
-            SELECT question_id, count(*)::int AS students, count(*) FILTER (WHERE solved)::int AS solved
-            FROM hbe.rpt_student_question WHERE tenant_id = ${tenantId} AND submits > 0 GROUP BY question_id HAVING count(*) >= ${FLAGS.minStudents}) r
+      sql`SELECT r.question_id, v.title, q.type, v.difficulty, r.students, r.solved
+          FROM hbe.rpt_question_totals r
           JOIN hbe.questions q ON q.id = r.question_id
-          JOIN hbe.question_versions v ON v.id = coalesce(q.published_version_id, q.latest_version_id)`,
+          JOIN hbe.question_versions v ON v.id = coalesce(q.published_version_id, q.latest_version_id)
+          WHERE r.tenant_id = ${tenantId} AND r.students >= ${FLAGS.minStudents}`,
     );
     return qs
       .map((q) => ({ questionId: q.question_id, title: q.title, type: q.type, difficulty: q.difficulty, students: q.students, solveRate: r1((q.solved / q.students) * 100), flag: flagOf(q.students, q.solved / q.students) }))
@@ -518,7 +545,7 @@ export class ReportsService implements OnModuleInit, OnModuleDestroy {
                    (SELECT count(*)::int FROM hbe.questions q WHERE q.tenant_id = t.id) AS questions,
                    (SELECT count(*)::int FROM hbe.tests x WHERE x.tenant_id = t.id) AS tests,
                    (SELECT coalesce(sum(d.submits + d.runs), 0)::int FROM hbe.rpt_tenant_daily d WHERE d.tenant_id = t.id AND d.day > (now() AT TIME ZONE ${tz})::date - 30) AS submits30,
-                   (SELECT count(DISTINCT user_id)::int FROM hbe.rpt_tenant_daily_users du WHERE du.tenant_id = t.id AND du.day > (now() AT TIME ZONE ${tz})::date - 30) AS active30
+                   (SELECT count(*)::int FROM hbe.rpt_user_activity ua WHERE ua.tenant_id = t.id AND ua.last_at > now() - interval '30 days') AS active30
             FROM hbe.tenants t ORDER BY t.name`,
       );
       const daily = await rows<{ day: string; runs: number; submits: number; accepted: number; internal_errors: number; guest_runs: number }>(

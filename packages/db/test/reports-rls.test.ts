@@ -43,6 +43,8 @@ beforeAll(async () => {
     await tx.insert(s.rptTenantDaily).values({ tenantId: ids.tA, day, submits: 2 });
     await tx.insert(s.rptTenantDailyUsers).values({ tenantId: ids.tA, day, userId: ids.s1 });
     await tx.insert(s.rptPlatformDaily).values({ day, submits: 2 });
+    await tx.insert(s.rptUserActivity).values({ tenantId: ids.tA, userId: ids.s1, lastAt: new Date() });
+    await tx.insert(s.rptQuestionTotals).values({ tenantId: ids.tA, questionId: ids.q, students: 2, solved: 1 });
     await tx.insert(s.plagiarismRuns).values({ id: ids.run, testId: ids.test, status: 'done' });
     await tx.insert(s.plagiarismPairs).values({ runId: ids.run, questionId: ids.q, subA: ids.sub1, subB: ids.sub2, userA: ids.s1, userB: ids.s2, similarity: '0.95', matched: 40 });
   });
@@ -62,15 +64,17 @@ describe('rollups', () => {
       expect(await count(c, s.rptTenantDaily)).toBe(1);
       expect(await count(c, s.rptStudentQuestion)).toBe(2);
     }
-    for (const table of [s.rptQuestionDaily, s.rptTenantDaily, s.rptTenantDailyUsers, s.rptStudentQuestion, s.plagiarismRuns, s.plagiarismPairs]) {
+    for (const table of [s.rptQuestionDaily, s.rptTenantDaily, s.rptTenantDailyUsers, s.rptUserActivity, s.rptQuestionTotals, s.rptStudentQuestion, s.plagiarismRuns, s.plagiarismPairs]) {
       expect(await count(teacherB, table)).toBe(0);
     }
+    expect(await count(teacherA, s.rptUserActivity)).toBe(1);
+    expect(await count(teacherA, s.rptQuestionTotals)).toBe(1);
   });
   it('a student reads only their own progress rows, nothing institution-wide', async () => {
     const mine = await as(s1, (tx) => tx.select().from(s.rptStudentQuestion));
     expect(mine.map((r) => r.userId)).toEqual([ids.s1]);
     expect(await count(s2, s.rptStudentQuestion)).toBe(1);
-    for (const table of [s.rptQuestionDaily, s.rptTenantDaily, s.rptTenantDailyUsers, s.plagiarismRuns, s.plagiarismPairs]) expect(await count(s1, table)).toBe(0);
+    for (const table of [s.rptQuestionDaily, s.rptTenantDaily, s.rptTenantDailyUsers, s.rptUserActivity, s.rptQuestionTotals, s.plagiarismRuns, s.plagiarismPairs]) expect(await count(s1, table)).toBe(0);
   });
   it('platform totals are super-admin only', async () => {
     expect(await count(adminA, s.rptPlatformDaily)).toBe(0);

@@ -33,7 +33,9 @@ async function grade(pass: (i: number) => boolean = () => true) {
 const rollups = async () => ({
   q: await systemQuery(t, 'SELECT tenant_id, question_id, day, runtime, runs, submits, accepted, score_sum::text, verdicts FROM hbe.rpt_question_daily ORDER BY 1, 2, 3, 4'),
   s: await systemQuery(t, 'SELECT tenant_id, user_id, question_id, runs, submits, best_score::text, solved, first_solved_at, last_at FROM hbe.rpt_student_question ORDER BY 1, 2, 3'),
-  d: await systemQuery(t, 'SELECT tenant_id, day, runs, submits, accepted FROM hbe.rpt_tenant_daily ORDER BY 1, 2'),
+  d: await systemQuery(t, 'SELECT tenant_id, day, runs, submits, accepted, active_users FROM hbe.rpt_tenant_daily ORDER BY 1, 2'),
+  a: await systemQuery(t, 'SELECT tenant_id, user_id, last_at FROM hbe.rpt_user_activity ORDER BY 1, 2'),
+  tq: await systemQuery(t, 'SELECT tenant_id, question_id, students, solved FROM hbe.rpt_question_totals ORDER BY 1, 2'),
   u: await systemQuery(t, 'SELECT tenant_id, day, user_id FROM hbe.rpt_tenant_daily_users ORDER BY 1, 2, 3'),
   p: await systemQuery(t, 'SELECT day, runs, submits, accepted, internal_errors, guest_runs FROM hbe.rpt_platform_daily ORDER BY 1'),
 });
@@ -99,6 +101,8 @@ describe('rollups', () => {
 
     const s1 = await systemQuery<{ submits: number; runs: number; best_score: string; solved: boolean }>(t, 'SELECT submits, runs, best_score, solved FROM hbe.rpt_student_question WHERE user_id = $1', [org.users.studentA.id]);
     expect(s1[0]).toMatchObject({ runs: 1, submits: 2, solved: true });
+    const totals = await systemQuery<{ students: number; solved: number }>(t, 'SELECT students, solved FROM hbe.rpt_question_totals WHERE question_id = $1', [questionId]);
+    expect(totals[0]).toEqual({ students: 3, solved: 1 });
     expect(Number(s1[0]!.best_score)).toBe(100);
     const before = await rollups();
     expect(before.q.length).toBeGreaterThan(0);
@@ -211,6 +215,7 @@ describe('question, student, batch and institution reports', () => {
       await systemQuery(t, `INSERT INTO hbe.users (id, email, name, status) VALUES ($1, $2, 'x', 'active')`, [id, `flag${i}@alpha.edu`]);
       await systemQuery(t, `INSERT INTO hbe.rpt_student_question (tenant_id, user_id, question_id, submits, best_score, solved, last_at) VALUES ($1, $2, $3, 1, 100, true, now())`, [org.tenantA, id, questionId]);
     }
+    await systemQuery(t, `UPDATE hbe.rpt_question_totals SET students = students + 30, solved = solved + 30 WHERE question_id = $1`, [questionId]);
     r = (await c.teacherA!.get('/api/v1/reports/overview')).json();
     expect(r.flagged).toEqual([expect.objectContaining({ questionId, students: 33, flag: 'too_easy' })]);
     expect((await c.s1!.get('/api/v1/reports/overview')).statusCode).toBe(403);

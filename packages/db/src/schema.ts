@@ -501,8 +501,26 @@ export const rptTenantDaily = hbe.table(
     runs: integer('runs').notNull().default(0),
     submits: integer('submits').notNull().default(0),
     accepted: integer('accepted').notNull().default(0),
+    activeUsers: integer('active_users').notNull().default(0),
   },
   (t) => [primaryKey({ columns: [t.tenantId, t.day] })],
+);
+
+export const rptUserActivity = hbe.table(
+  'rpt_user_activity',
+  { tenantId: uuid('tenant_id').notNull(), userId: uuid('user_id').notNull(), lastAt: ts('last_at').notNull() },
+  (t) => [primaryKey({ columns: [t.tenantId, t.userId] })],
+);
+
+export const rptQuestionTotals = hbe.table(
+  'rpt_question_totals',
+  {
+    tenantId: uuid('tenant_id').notNull(),
+    questionId: uuid('question_id').notNull(),
+    students: integer('students').notNull().default(0),
+    solved: integer('solved').notNull().default(0),
+  },
+  (t) => [primaryKey({ columns: [t.tenantId, t.questionId] })],
 );
 
 export const rptTenantDailyUsers = hbe.table(
@@ -582,6 +600,8 @@ export const allTables = {
   rptStudentQuestion,
   rptTenantDaily,
   rptTenantDailyUsers,
+  rptUserActivity,
+  rptQuestionTotals,
   rptPlatformDaily,
   plagiarismRuns,
   plagiarismPairs,
