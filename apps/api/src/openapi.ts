@@ -91,6 +91,19 @@ const ops: Op[] = [
   { method: 'post', path: '/uploads/{id}/confirm', summary: 'Import the ready rows (optionally validate + publish)', tag: 'uploads', perm: 'question:write', body: z.object({ publish: z.boolean().default(false) }), status: 202 },
   { method: 'delete', path: '/uploads/{id}', summary: 'Discard an upload', tag: 'uploads', perm: 'question:write', status: 204 },
   { method: 'get', path: '/exports/questions', summary: 'Export questions with hidden tests and solutions (editable questions only; audited)', tag: 'uploads', perm: 'question:write', query: z.object({ format: z.enum(['xlsx', 'docx', 'json']), ids: z.string() }) },
+  { method: 'get', path: '/reports/overview', summary: 'Institution dashboard: people, content, 30-day activity, recent tests, flagged questions', tag: 'reports', perm: 'role client_admin | teacher | associate' },
+  { method: 'get', path: '/reports/tests/{id}', summary: 'Test report: summary, score distribution, per-question and per-student results, similarity summary', tag: 'reports', perm: 'role client_admin | teacher | associate' },
+  { method: 'get', path: '/reports/tests/{id}/export', summary: 'Test report as CSV or Excel (audited)', tag: 'reports', perm: 'role client_admin | teacher | associate', query: z.object({ format: z.enum(['csv', 'xlsx']) }) },
+  { method: 'get', path: '/reports/questions/{id}', summary: 'Question report: acceptance, solve rate, by language, verdicts, 30-day activity, tests', tag: 'reports', perm: 'role client_admin | teacher | associate' },
+  { method: 'get', path: '/reports/batches/{id}', summary: 'Batch report: students × tests grid', tag: 'reports', perm: 'role client_admin | teacher | associate' },
+  { method: 'get', path: '/reports/batches/{id}/export', summary: 'Batch report as CSV or Excel (audited)', tag: 'reports', perm: 'role client_admin | teacher | associate', query: z.object({ format: z.enum(['csv', 'xlsx']) }) },
+  { method: 'get', path: '/reports/students/{id}', summary: 'Student progress (staff of the institution, or the student themselves)', tag: 'reports', perm: 'report:view' },
+  { method: 'get', path: '/reports/me', summary: 'My progress (scores only where the test releases results)', tag: 'reports', perm: 'report:view' },
+  { method: 'get', path: '/reports/platform', summary: 'Platform health: institutions, daily totals, queue depth, executors', tag: 'reports', perm: 'role super_admin' },
+  { method: 'post', path: '/reports/rebuild', summary: 'Recompute all report rollups from raw data (audited)', tag: 'reports', perm: 'role super_admin' },
+  { method: 'post', path: '/tests/{id}/plagiarism', summary: 'Start a code-similarity check for a test (runs in the background; audited)', tag: 'reports', perm: 'test:manage', status: 202 },
+  { method: 'get', path: '/tests/{id}/plagiarism', summary: 'Latest similarity check and its flagged pairs', tag: 'reports', perm: 'test:proctor' },
+  { method: 'get', path: '/plagiarism/{runId}/pairs/{questionId}/{subA}/{subB}', summary: 'Both submissions of a flagged pair with matching line ranges', tag: 'reports', perm: 'test:proctor' },
   { method: 'get', path: '/attempts/{id}/snapshots/{snapshotId}', summary: 'Webcam snapshot (image/jpeg; viewing is audited)', tag: 'proctoring', perm: 'test:proctor' },
 ];
 
@@ -108,7 +121,7 @@ export function buildOpenApi(): Record<string, unknown> {
       operationId: op.method + op.path.split('/').filter(Boolean).map((seg) => seg.replace(/[{}]/g, '').replace(/(^|-)(\w)/g, (_m, _d, c: string) => c.toUpperCase())).join(''),
       tags: [op.tag],
       summary: op.summary,
-      description: op.perm ? `Requires permission \`${op.perm}\`.` : undefined,
+      description: op.perm ? (op.perm.startsWith('role ') ? `Requires role ${op.perm.slice(5)}.` : `Requires permission \`${op.perm}\`.`) : undefined,
       security: op.auth === 'none' ? [] : [{ session: [] }],
       parameters: params.length ? params : undefined,
       requestBody: op.body ? { required: true, content: { 'application/json': { schema: json(op.body) } } } : undefined,
@@ -122,7 +135,7 @@ export function buildOpenApi(): Record<string, unknown> {
     openapi: '3.1.0',
     info: {
       title: 'HBECode API',
-      version: '0.5.0',
+      version: '0.6.0',
       description:
         'Cookie-session API. Unsafe methods require the `x-csrf-token` header (from GET /auth/csrf) and an allowed Origin. Executor endpoints (/internal/executor/*) are bearer-token only and are intentionally not documented here. Realtime pushes: WebSocket at /api/v1/ws (session cookie + allowed Origin); send {"op":"sub","channel":"attempt","attemptId","token"} or {"op":"sub","channel":"monitor","testId"}.',
     },

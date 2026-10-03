@@ -1,6 +1,7 @@
 'use client';
 
 import type { Page as PageT } from '@hbe/shared';
+import Link from 'next/link';
 import { useEffect, useState, type FormEvent } from 'react';
 import { del, get, post } from '@/lib/api';
 import { useRequireUser, useSession } from '@/lib/session';
@@ -65,6 +66,7 @@ export default function Batches() {
             <div className="card">
               <div className="mb-3 flex items-center gap-2">
                 <h2 className="font-medium">{open.name}</h2>
+                <Link className="text-xs text-brand-600 hover:underline" href={`/reports/batch?id=${open.id}`}>Report</Link>
                 {manage && <button className="ml-auto text-xs text-rose-600 hover:underline" onClick={async () => { if (confirm('Delete this batch?')) { await del(`/api/v1/batches/${open.id}`).catch(setError); setOpen(null); await load(); } }}>Delete batch</button>}
               </div>
               <ul className="mb-4 divide-y divide-slate-200 text-sm dark:divide-slate-800">

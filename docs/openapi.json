@@ -2,7 +2,7 @@
   "openapi": "3.1.0",
   "info": {
     "title": "HBECode API",
-    "version": "0.5.0",
+    "version": "0.6.0",
     "description": "Cookie-session API. Unsafe methods require the `x-csrf-token` header (from GET /auth/csrf) and an allowed Origin. Executor endpoints (/internal/executor/*) are bearer-token only and are intentionally not documented here. Realtime pushes: WebSocket at /api/v1/ws (session cookie + allowed Origin); send {\"op\":\"sub\",\"channel\":\"attempt\",\"attemptId\",\"token\"} or {\"op\":\"sub\",\"channel\":\"monitor\",\"testId\"}."
   },
   "servers": [
@@ -7266,6 +7266,534 @@
             "required": false,
             "schema": {
               "$schema": "https://json-schema.org/draft/2020-12/schema",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success"
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/reports/overview": {
+      "get": {
+        "operationId": "getReportsOverview",
+        "tags": [
+          "reports"
+        ],
+        "summary": "Institution dashboard: people, content, 30-day activity, recent tests, flagged questions",
+        "description": "Requires role client_admin | teacher | associate.",
+        "security": [
+          {
+            "session": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success"
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/reports/tests/{id}": {
+      "get": {
+        "operationId": "getReportsTestsId",
+        "tags": [
+          "reports"
+        ],
+        "summary": "Test report: summary, score distribution, per-question and per-student results, similarity summary",
+        "description": "Requires role client_admin | teacher | associate.",
+        "security": [
+          {
+            "session": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success"
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/reports/tests/{id}/export": {
+      "get": {
+        "operationId": "getReportsTestsIdExport",
+        "tags": [
+          "reports"
+        ],
+        "summary": "Test report as CSV or Excel (audited)",
+        "description": "Requires role client_admin | teacher | associate.",
+        "security": [
+          {
+            "session": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "format",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "$schema": "https://json-schema.org/draft/2020-12/schema",
+              "type": "string",
+              "enum": [
+                "csv",
+                "xlsx"
+              ]
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success"
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/reports/questions/{id}": {
+      "get": {
+        "operationId": "getReportsQuestionsId",
+        "tags": [
+          "reports"
+        ],
+        "summary": "Question report: acceptance, solve rate, by language, verdicts, 30-day activity, tests",
+        "description": "Requires role client_admin | teacher | associate.",
+        "security": [
+          {
+            "session": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success"
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/reports/batches/{id}": {
+      "get": {
+        "operationId": "getReportsBatchesId",
+        "tags": [
+          "reports"
+        ],
+        "summary": "Batch report: students × tests grid",
+        "description": "Requires role client_admin | teacher | associate.",
+        "security": [
+          {
+            "session": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success"
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/reports/batches/{id}/export": {
+      "get": {
+        "operationId": "getReportsBatchesIdExport",
+        "tags": [
+          "reports"
+        ],
+        "summary": "Batch report as CSV or Excel (audited)",
+        "description": "Requires role client_admin | teacher | associate.",
+        "security": [
+          {
+            "session": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "format",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "$schema": "https://json-schema.org/draft/2020-12/schema",
+              "type": "string",
+              "enum": [
+                "csv",
+                "xlsx"
+              ]
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success"
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/reports/students/{id}": {
+      "get": {
+        "operationId": "getReportsStudentsId",
+        "tags": [
+          "reports"
+        ],
+        "summary": "Student progress (staff of the institution, or the student themselves)",
+        "description": "Requires permission `report:view`.",
+        "security": [
+          {
+            "session": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success"
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/reports/me": {
+      "get": {
+        "operationId": "getReportsMe",
+        "tags": [
+          "reports"
+        ],
+        "summary": "My progress (scores only where the test releases results)",
+        "description": "Requires permission `report:view`.",
+        "security": [
+          {
+            "session": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success"
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/reports/platform": {
+      "get": {
+        "operationId": "getReportsPlatform",
+        "tags": [
+          "reports"
+        ],
+        "summary": "Platform health: institutions, daily totals, queue depth, executors",
+        "description": "Requires role super_admin.",
+        "security": [
+          {
+            "session": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success"
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/reports/rebuild": {
+      "post": {
+        "operationId": "postReportsRebuild",
+        "tags": [
+          "reports"
+        ],
+        "summary": "Recompute all report rollups from raw data (audited)",
+        "description": "Requires role super_admin.",
+        "security": [
+          {
+            "session": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success"
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/tests/{id}/plagiarism": {
+      "post": {
+        "operationId": "postTestsIdPlagiarism",
+        "tags": [
+          "reports"
+        ],
+        "summary": "Start a code-similarity check for a test (runs in the background; audited)",
+        "description": "Requires permission `test:manage`.",
+        "security": [
+          {
+            "session": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "202": {
+            "description": "Success"
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          }
+        }
+      },
+      "get": {
+        "operationId": "getTestsIdPlagiarism",
+        "tags": [
+          "reports"
+        ],
+        "summary": "Latest similarity check and its flagged pairs",
+        "description": "Requires permission `test:proctor`.",
+        "security": [
+          {
+            "session": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success"
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/plagiarism/{runId}/pairs/{questionId}/{subA}/{subB}": {
+      "get": {
+        "operationId": "getPlagiarismRunIdPairsQuestionIdSubASubB",
+        "tags": [
+          "reports"
+        ],
+        "summary": "Both submissions of a flagged pair with matching line ranges",
+        "description": "Requires permission `test:proctor`.",
+        "security": [
+          {
+            "session": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "runId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "questionId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "subA",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "subB",
+            "in": "path",
+            "required": true,
+            "schema": {
               "type": "string"
             }
           }

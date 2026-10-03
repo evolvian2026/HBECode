@@ -107,7 +107,7 @@ export default function Monitor() {
   const inProgress = rows.filter((r) => r.attempt?.status === 'in_progress').length;
   const pendingCount = rows.reduce((n, r) => n + (r.attempt?.pendingDevices.length ?? 0), 0);
   return (
-    <Page title={`Live monitor — ${live.test.title}`} actions={<Link className="btn-secondary" href={`/tests/edit?id=${id}`}>Test details</Link>}>
+    <Page title={`Live monitor — ${live.test.title}`} actions={<><Link className="btn-secondary" href={`/reports/test?id=${id}`}>Report</Link><Link className="btn-secondary" href={`/tests/edit?id=${id}`}>Test details</Link></>}>
       <div className="mb-3 flex flex-wrap items-center gap-3 text-sm">
         <Badge tone={connected ? 'green' : 'amber'}>{connected ? 'Live' : 'Polling'}</Badge>
         <span>{rows.length} assigned · {started} started · {inProgress} in progress</span>

@@ -46,7 +46,10 @@ export function Nav() {
             {can('question:read_full') && link('/questions', 'Question bank')}
             {(user.role === 'client_admin' || user.role === 'super_admin') && link('/admin/users', 'Users')}
             {(user.role === 'client_admin' || user.role === 'teacher') && link('/admin/batches', 'Batches')}
+            {['client_admin', 'teacher', 'associate'].includes(user.role) && link('/reports', 'Reports')}
+            {user.role === 'student' && link('/reports/me', 'My progress')}
             {user.role === 'super_admin' && link('/admin/tenants', 'Institutions')}
+            {user.role === 'super_admin' && link('/admin/platform', 'Platform')}
           </nav>
         )}
         <div className="ml-auto flex items-center gap-2 text-sm">

@@ -113,7 +113,7 @@ services:
       MONGO_INITDB_ROOT_PASSWORD: ${RUNNER_MONGO_PASSWORD:-runner-mongo-dev}
     tmpfs: [/data/db]
     networks: [runners]
-    mem_limit: 512m
+    mem_limit: 768m # mongod + tmpfs data + the mongosh health check (~150 MB each run)
     security_opt: ['no-new-privileges:true']
     healthcheck:
       test: ['CMD', 'mongosh', '--quiet', '--eval', 'db.runCommand({ping:1})']

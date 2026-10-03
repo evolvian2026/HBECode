@@ -4,7 +4,9 @@ A multi-tenant online coding assessment platform. Students write code in a brows
 secure sandbox against hidden tests, and get feedback in about a second. Institutions manage their
 own teachers, students and batches; teachers manage the question bank.
 
-**Status: Phase 5 of 8 (bulk upload, validator, templates) — done, awaiting review.** See the [Phase 5 report](docs/phase-5-report.md) (and [Phase 4](docs/phase-4-report.md), [Phase 3](docs/phase-3-report.md), [Phase 2](docs/phase-2-report.md)) for what was built and measured.
+**Status: Phase 6 of 8 (reports and exports) — done, awaiting review.** See the [Phase 6 report](docs/phase-6-report.md) (and [Phase 5](docs/phase-5-report.md), [Phase 4](docs/phase-4-report.md), [Phase 3](docs/phase-3-report.md), [Phase 2](docs/phase-2-report.md)) for what was built and measured.
+
+**Reports**: an institution dashboard (activity, recent tests, questions that look too easy or too hard), test reports (score distribution, per-question and per-student results, CSV/Excel export, print to PDF), question, batch and student reports, *My progress* for students, a platform health page for the super admin, and an on-demand **code similarity check** per test with a side-by-side compare.
 
 Bulk **import and export** of questions in Excel, Word or JSON, with downloadable templates, a per-row preview of every problem, a problem report, and optional sandbox validation + publishing on import. See the [question format guide](docs/question-format.md).
 
@@ -35,6 +37,7 @@ Open http://localhost:3000 and sign in:
 | Role | Email | Password |
 |---|---|---|
 | Student | `student@demo.edu` | `demo-password-123` |
+| Student 2 | `student2@demo.edu` | `demo-password-123` |
 | Teacher | `teacher@demo.edu` | `demo-password-123` |
 | Associate (TA) | `ta@demo.edu` | `demo-password-123` |
 | Institution admin (MFA enrolment forced) | `admin@demo.edu` | `demo-password-123` |

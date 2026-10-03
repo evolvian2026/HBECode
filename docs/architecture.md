@@ -762,6 +762,20 @@ flowchart TB
 
 ---
 
+### 15.8 Design changes made during Phase 6 (decision log)
+
+| Change | Reason |
+|---|---|
+| **Rollup tables updated on every graded submission**, inside the grading path's own transaction scope (`rpt_question_daily`, `rpt_student_question`, `rpt_tenant_daily` + `rpt_tenant_daily_users`, `rpt_user_activity`, `rpt_question_totals`, `rpt_platform_daily`), plus a **full rebuild from `submissions`** once a day (Redis-guarded, any API instance) and on demand (`POST /reports/rebuild`, super admin). A test asserts incremental == rebuilt. | Dashboards read small pre-aggregated rows instead of scanning `submissions` (330k rows in the latency test). The rebuild makes the rollups self-healing: a rare double count under concurrent first-solves of the same question, or a lost hook during a crash, is corrected within a day. |
+| **Test reports read `attempts` (with the per-question `breakdown` stored at grading) instead of a separate `rpt_test_stats` table.** | One test has at most a few thousand attempts; computing from them takes 62 ms p95 for 1,000 students and can never disagree with the monitor. |
+| Report days are counted in **`REPORT_TIMEZONE`** (default `Asia/Kolkata`), not UTC. | A class at 9 am IST would otherwise be split across two "days". |
+| **Staff reports are institution-wide** (admins, teachers and associates of the institution see every test, question, batch and student of it). | There is no staff ↔ test/batch assignment in the model, and the Phase 4 monitor is already institution-wide. Narrowing to "my batches" is a later change if institutions ask for it. |
+| **Students see only their own progress** (`/reports/me`); a test score is shown only when the test releases results and the attempt is finished; violation counts are never shown to students. | Matches what the exam page already reveals. |
+| Question flags: **too easy** if > 90% of students solved it, **too hard** if < 10%, only with ≥ 30 students (env `REPORT_FLAG_*`). Test questions use the full-marks rate among students who attempted. | Small samples produce noise; thresholds are configurable per deployment. |
+| **Exports are synchronous** CSV (UTF-8 BOM, CRLF, formula-like cells prefixed with `'`) or Excel (our own writer, inline strings only), sent `private, no-store` and **audited** (`report.export`). **PDF = the browser's print view** of the report page (print styles hide buttons). | A 1,000-student test exports in well under a second, so a job queue and object storage would add moving parts for nothing; the API image has no Chromium for server-side PDF. |
+| **Plagiarism: winnowing** (MOSS-style). Code is tokenised per language (identifiers → `I`, numbers → `N`, strings → `S`, comments dropped, keywords kept), the starter code's fingerprints are removed, k = 5-token grams are hashed and winnowed (w = 4), and pairs are scored by **containment** (shared / smaller set). Fingerprints shared by a large share of submissions are ignored. Pairs ≥ 75% with ≥ 10 fingerprints are stored with the matching line ranges. Runs on demand per test (teacher), in a worker thread, best graded submission per student and question; coding and web questions only (SQL answers are too short and too alike to be meaningful). | Robust to renaming, reformatting and comments; containment catches a solution pasted into a longer file. Results are a reason to look, not proof — the UI says so and shows both programs side by side. |
+| Executors report themselves on every claim (Redis key with a 5-minute TTL) so the platform page can list live executors and their runtimes. | No new table or endpoint for the executor. |
+
 ## 16. AWS target architecture and migration
 
 ```mermaid

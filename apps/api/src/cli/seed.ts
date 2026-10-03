@@ -53,8 +53,11 @@ if (process.env.SEED_DEMO_PASSWORD) {
     const [n] = await tx.insert(tenants).values({ name: 'Demo University', slug: 'demo' }).returning({ id: tenants.id });
     return n!.id;
   });
-  for (const [role, email] of [['client_admin', 'admin@demo.edu'], ['teacher', 'teacher@demo.edu'], ['associate', 'ta@demo.edu'], ['student', 'student@demo.edu']] as const) {
-    const id = await ensureUser(email, `Demo ${role.replace('_', ' ')}`, p);
+  for (const [role, email, name] of [
+    ['client_admin', 'admin@demo.edu', 'Demo client admin'], ['teacher', 'teacher@demo.edu', 'Demo teacher'], ['associate', 'ta@demo.edu', 'Demo associate'],
+    ['student', 'student@demo.edu', 'Demo student'], ['student', 'student2@demo.edu', 'Demo student 2'],
+  ] as const) {
+    const id = await ensureUser(email, name, p);
     await db.system((tx) => tx.insert(memberships).values({ userId: id, tenantId, role }).onConflictDoNothing());
   }
 }

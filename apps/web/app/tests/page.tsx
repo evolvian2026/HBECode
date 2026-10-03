@@ -46,6 +46,7 @@ function StaffTests({ manage }: { manage: boolean }) {
                 <td>{t.attempts}{t.inProgress > 0 && <span className="ml-1 text-emerald-600">({t.inProgress} live)</span>}</td>
                 <td className="space-x-3 text-right">
                   {t.status !== 'draft' && <Link className="text-brand-600 hover:underline" href={`/tests/monitor?id=${t.id}`}>Monitor</Link>}
+                  {t.status !== 'draft' && <Link className="text-brand-600 hover:underline" href={`/reports/test?id=${t.id}`}>Report</Link>}
                   <Link className="text-brand-600 hover:underline" href={`/tests/edit?id=${t.id}`}>{t.status === 'draft' && manage ? 'Edit' : 'Details'}</Link>
                 </td>
               </tr>

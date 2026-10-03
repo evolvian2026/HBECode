@@ -114,6 +114,18 @@ Each item must end in a contained verdict (`RE`/`TLE`/`MLE`/`OLE`), with no host
 | U6 | Overwriting someone else's question via a forged `id` | `id` is honoured only if the author can edit that question under RLS (same tenant, or super admin for global); otherwise a new question is created with a warning; the type cannot change | `uploads.test.ts` (round trip into another tenant creates new questions; re-import by the owner updates) |
 | U7 | Hidden data lingering after import | File dropped after parsing; row payloads cleared on import/discard; jobs deleted after 7 days | `uploads.test.ts` (no payload left after import) |
 
+## 5d. Phase 6: reports, exports and similarity checks (as built and tested)
+
+| # | Threat | Mitigation | Verified by |
+|---|---|---|---|
+| R1 | **Report data of one institution visible to another** (scores, names, emails) | All rollup tables under forced RLS (staff of the tenant); writes system-only; report queries run under the caller's RLS context; the platform view requires super admin | `reports-rls.test.ts` (other tenant reads 0 rows from every rollup; teachers cannot write), `reports.test.ts` (other tenant 404; students 403 on staff reports; platform super-admin only) |
+| R2 | **A student reads classmates' results**, or a score that is not released yet, or proctoring flags | Students read only their own `rpt_student_question` rows (RLS); `/reports/students/:id` for a student only with their own id; scores hidden while in progress or when `showResults` is off; violations omitted | `reports-rls.test.ts`, `reports.test.ts` (*a student sees only their own report…*) |
+| R3 | **CSV / formula injection**: a student named `=HYPERLINK(...)` executes in a teacher's Excel | CSV cells starting with `= + - @ TAB CR` are prefixed with `'`; Excel exports use inline strings only (never formulas) | `reports.test.ts` (*formula-like names are neutralised in CSV*) |
+| R4 | Exports leak personal data without a trace | Staff only, sent `private, no-store`, every export audited (`report.export` with format and row count) | `reports.test.ts` (audit row) |
+| R5 | **Similarity results or other students' code** seen by students, or by another institution | Runs and pairs under RLS (tenant staff); only teachers (`test:manage`) start a run, associates may view; the compare view returns code only for a stored pair of the caller's tenant; rate limit 10 runs / 10 min per user | `reports-rls.test.ts` (*teachers queue runs for their own institution only…*), `reports.test.ts` (student 403, other tenant 404), `reports.spec.ts` |
+| R6 | A crafted submission makes the similarity check hang or exhaust memory | Runs in a worker thread off the event loop; inputs are bounded (one graded submission per student and question, submission size cap); common fingerprints dropped; one run per test at a time | Design review; the worker path is exercised by `reports.test.ts` and `reports.spec.ts` (no fuzzing yet) |
+| R7 | Rollups drift (wrong numbers presented as fact) | Daily rebuild from raw data; test asserts incremental == rebuilt | `reports.test.ts` (*equals a full rebuild*) |
+
 ## 6. Security checklist (gate for each phase)
 
 - [ ] All endpoints have an explicit permission decorator (CI check: an unannotated route fails the build)
