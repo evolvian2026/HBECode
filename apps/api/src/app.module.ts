@@ -16,11 +16,14 @@ import { AttemptsController, MyTestsController, TestsController } from './tests/
 import { TestsService } from './tests/tests.service.js';
 import { ExportsController, UploadsController } from './uploads/uploads.controller.js';
 import { UploadsService } from './uploads/uploads.service.js';
+import { PlagiarismService } from './plagiarism/plagiarism.service.js';
+import { PlagiarismController, ReportsController } from './reports/reports.controller.js';
+import { ReportsService } from './reports/reports.service.js';
 
 @Module({
   imports: [InfraModule, AuthModule, OrgModule],
-  controllers: [HealthController, QuestionsController, PracticeController, SubmissionsController, ExecutorController, TestsController, MyTestsController, AttemptsController, UploadsController, ExportsController],
-  providers: [QuestionsService, SubmissionsService, DispatchService, RealtimeService, TestsService, AttemptsService, RealtimeGateway, UploadsService],
+  controllers: [HealthController, QuestionsController, PracticeController, SubmissionsController, ExecutorController, TestsController, MyTestsController, AttemptsController, UploadsController, ExportsController, ReportsController, PlagiarismController],
+  providers: [QuestionsService, SubmissionsService, DispatchService, RealtimeService, TestsService, AttemptsService, RealtimeGateway, UploadsService, ReportsService, PlagiarismService],
   exports: [QuestionsService, DispatchService, AttemptsService],
 })
 export class AppModule {}

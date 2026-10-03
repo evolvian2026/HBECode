@@ -6,6 +6,7 @@ import {
   bigint,
   boolean,
   customType,
+  date,
   integer,
   jsonb,
   numeric,
@@ -457,6 +458,99 @@ export const uploadRows = hbe.table(
   (t) => [primaryKey({ columns: [t.jobId, t.rowNo] })],
 );
 
+// ------------------------------------------------------------------ reports (Phase 6)
+const day = (name: string) => date(name, { mode: 'string' });
+
+export const rptQuestionDaily = hbe.table(
+  'rpt_question_daily',
+  {
+    tenantId: uuid('tenant_id').notNull(),
+    questionId: uuid('question_id').notNull(),
+    day: day('day').notNull(),
+    runtime: text('runtime').notNull(),
+    runs: integer('runs').notNull().default(0),
+    submits: integer('submits').notNull().default(0),
+    accepted: integer('accepted').notNull().default(0),
+    scoreSum: numeric('score_sum', { precision: 12, scale: 2 }).notNull().default('0'),
+    verdicts: jsonb('verdicts').$type<Record<string, number>>().notNull().default({}),
+  },
+  (t) => [primaryKey({ columns: [t.tenantId, t.questionId, t.day, t.runtime] })],
+);
+
+export const rptStudentQuestion = hbe.table(
+  'rpt_student_question',
+  {
+    tenantId: uuid('tenant_id').notNull(),
+    userId: uuid('user_id').notNull(),
+    questionId: uuid('question_id').notNull(),
+    runs: integer('runs').notNull().default(0),
+    submits: integer('submits').notNull().default(0),
+    bestScore: numeric('best_score', { precision: 6, scale: 2 }).notNull().default('0'),
+    solved: boolean('solved').notNull().default(false),
+    firstSolvedAt: ts('first_solved_at'),
+    lastAt: ts('last_at').notNull(),
+  },
+  (t) => [primaryKey({ columns: [t.tenantId, t.userId, t.questionId] })],
+);
+
+export const rptTenantDaily = hbe.table(
+  'rpt_tenant_daily',
+  {
+    tenantId: uuid('tenant_id').notNull(),
+    day: day('day').notNull(),
+    runs: integer('runs').notNull().default(0),
+    submits: integer('submits').notNull().default(0),
+    accepted: integer('accepted').notNull().default(0),
+  },
+  (t) => [primaryKey({ columns: [t.tenantId, t.day] })],
+);
+
+export const rptTenantDailyUsers = hbe.table(
+  'rpt_tenant_daily_users',
+  { tenantId: uuid('tenant_id').notNull(), day: day('day').notNull(), userId: uuid('user_id').notNull() },
+  (t) => [primaryKey({ columns: [t.tenantId, t.day, t.userId] })],
+);
+
+export const rptPlatformDaily = hbe.table('rpt_platform_daily', {
+  day: day('day').primaryKey(),
+  runs: integer('runs').notNull().default(0),
+  submits: integer('submits').notNull().default(0),
+  accepted: integer('accepted').notNull().default(0),
+  internalErrors: integer('internal_errors').notNull().default(0),
+  guestRuns: integer('guest_runs').notNull().default(0),
+});
+
+export const plagiarismRuns = hbe.table('plagiarism_runs', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  tenantId: uuid('tenant_id'),
+  testId: uuid('test_id').notNull(),
+  status: text('status').$type<'queued' | 'running' | 'done' | 'failed'>().notNull().default('queued'),
+  params: jsonb('params').$type<{ threshold?: number; k?: number; w?: number }>().notNull().default({}),
+  counts: jsonb('counts').$type<Record<string, number>>().notNull().default({}),
+  error: text('error'),
+  createdBy: uuid('created_by'),
+  leaseUntil: ts('lease_until'),
+  createdAt: ts('created_at').notNull().defaultNow(),
+  finishedAt: ts('finished_at'),
+});
+
+export const plagiarismPairs = hbe.table(
+  'plagiarism_pairs',
+  {
+    runId: uuid('run_id').notNull(),
+    tenantId: uuid('tenant_id'),
+    questionId: uuid('question_id').notNull(),
+    subA: uuid('sub_a').notNull(),
+    subB: uuid('sub_b').notNull(),
+    userA: uuid('user_a').notNull(),
+    userB: uuid('user_b').notNull(),
+    similarity: numeric('similarity', { precision: 5, scale: 4 }).notNull(),
+    matched: integer('matched').notNull(),
+    regions: jsonb('regions').$type<{ a: [number, number][]; b: [number, number][] }>().notNull().default({ a: [], b: [] }),
+  },
+  (t) => [primaryKey({ columns: [t.runId, t.questionId, t.subA, t.subB] })],
+);
+
 export const allTables = {
   tenants,
   users,
@@ -484,4 +578,11 @@ export const allTables = {
   proctorSnapshots,
   uploadJobs,
   uploadRows,
+  rptQuestionDaily,
+  rptStudentQuestion,
+  rptTenantDaily,
+  rptTenantDailyUsers,
+  rptPlatformDaily,
+  plagiarismRuns,
+  plagiarismPairs,
 };

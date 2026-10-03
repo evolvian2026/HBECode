@@ -31,6 +31,8 @@ export class DispatchService implements OnModuleInit, OnModuleDestroy {
   private readonly listeners = new Map<string, Set<(msg: string) => void>>();
   /** Registered by QuestionsService (kept as a hook to avoid an import cycle). */
   private validationHandler?: (submissionId: string, result: ExecResult) => Promise<void>;
+  /** Registered by ReportsService: update rollups when a run/submit is graded. */
+  private reportHandler?: (submissionId: string) => Promise<void>;
   /** Registered by AttemptsService: re-score an attempt when one of its submissions finishes. */
   private attemptHandler?: (attemptId: string) => Promise<void>;
 
@@ -42,6 +44,10 @@ export class DispatchService implements OnModuleInit, OnModuleDestroy {
 
   onValidationResult(handler: (submissionId: string, result: ExecResult) => Promise<void>) {
     this.validationHandler = handler;
+  }
+
+  onSubmissionGraded(handler: (submissionId: string) => Promise<void>) {
+    this.reportHandler = handler;
   }
 
   onAttemptSubmissionDone(handler: (attemptId: string) => Promise<void>) {
@@ -88,6 +94,8 @@ export class DispatchService implements OnModuleInit, OnModuleDestroy {
 
   /** Long-poll: wait up to CLAIM_WAIT_SEC for a submission and lease it to this executor. */
   async claim(executorId: string, runtimes: Capability[]): Promise<ExecJob | null> {
+    // Executor health for the platform dashboard: last time each executor asked for work.
+    await this.redis.set(`${this.cfg.REDIS_PREFIX}exec-seen:${executorId}`, JSON.stringify({ at: new Date().toISOString(), runtimes }), 'EX', 300).catch(() => undefined);
     const deadline = Date.now() + CLAIM_WAIT_SEC * 1000;
     const conn = this.acquire();
     try {
@@ -227,6 +235,7 @@ export class DispatchService implements OnModuleInit, OnModuleDestroy {
     if (!outcome) return 'stale';
     await this.notify(result.jobId, 'done');
     if (outcome.kind === 'validate') await this.validationHandler?.(result.jobId, result);
+    if (outcome.kind !== 'validate') await this.reportHandler?.(result.jobId).catch((e) => this.log.error(`report rollup failed: ${(e as Error).message}`));
     if (outcome.attemptId) await this.attemptHandler?.(outcome.attemptId).catch((e) => this.log.error(`attempt re-score failed: ${(e as Error).message}`));
     return 'ok';
   }
@@ -286,6 +295,7 @@ export class DispatchService implements OnModuleInit, OnModuleDestroy {
     });
     for (const a of r.again) await this.redis.rpush(this.key(a.priority), a.id);
     for (const d of r.dead) await this.notify(d.id, 'done');
+    for (const d of r.dead) await this.reportHandler?.(d.id).catch(() => undefined);
     for (const d of r.dead) if (d.attemptId) await this.attemptHandler?.(d.attemptId).catch(() => undefined);
     if (r.again.length || r.dead.length) this.log.warn(`sweeper requeued ${r.again.length}, failed ${r.dead.length}`);
     return { requeued: r.again.length, failed: r.dead.length };

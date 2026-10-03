@@ -64,7 +64,17 @@ export async function provisionAppRole(adminUrl: string, password: string): Prom
   try {
     // Identifiers cannot be bound; the role name is a constant and the password is escaped by format().
     const { rows } = await client.query<{ q: string }>(`SELECT format('ALTER ROLE hbe_app LOGIN PASSWORD %L', $1::text) AS q`, [password]);
-    await client.query(rows[0]!.q);
+    // Roles are cluster-wide: two databases provisioning at once (parallel test runs, two
+    // environments on one server) can collide with "tuple concurrently updated". Retry that.
+    for (let attempt = 1; ; attempt++) {
+      try {
+        await client.query(rows[0]!.q);
+        break;
+      } catch (e) {
+        if (attempt >= 5 || !/tuple concurrently updated/.test((e as Error).message)) throw e;
+        await new Promise((r) => setTimeout(r, 50 * attempt + Math.random() * 100));
+      }
+    }
   } finally {
     await client.end();
   }
