@@ -18,6 +18,8 @@ Branch `claude/compassionate-carson-jcy713`. Everything below was run in this ph
 
 Full bank run (`BANK_SLOTS=4 pnpm --filter @hbe/api test:bank`, real executor image, real PostgreSQL 16 / MySQL 8.4 / MongoDB 8.0 runners): **170 / 170 published in 6.6 minutes** (7.7 minutes including starting the containers). The final run used the final executor image, after every fix below.
 
+**In CI** (GitHub's `ubuntu-24.04` runner, job *Seed bank*, run #20 on commit `a2cb6d2`): **170 / 170 pass**; the validation step took about 7.5 minutes. The rest of CI is green on the same commit: lint, typecheck, unit, RLS and API tests, and the sandbox-escape and real-executor suites.
+
 Fresh `docker compose up` + `seed` (the local stack, 2 executor slots): **170 / 170 published 8.2 and 8.5 minutes after seeding** (two fresh runs). The PostgreSQL runner peaked at 375 MiB of its 512 MB limit.
 
 Slowest reference solution per stack, as a share of its time limit (the validator requires ≤ 70 %):
@@ -80,6 +82,7 @@ Lint and typecheck are clean.
    - *Gas Station* claimed a unique answer that was not unique; it now asks for the smallest index.
    - A web hover check that required no CSS transition, now stated in the question.
    - A Kelvin rounding question where `toFixed` and `Math.round` disagree at .x5, now 2 decimals.
+9. **CI had been red since Phase 6 for two reasons unrelated to the bank**, both fixed: the API typecheck ran before the API was built, while a Phase 6 test imports its `dist` (it passed locally only because `dist` existed); and the executor job failed at setup because `aquasecurity/trivy-action@0.28.0` no longer resolves (the project's tags are `v`-prefixed now). It is now pinned to the `v0.36.0` commit SHA. With that, the sandbox-escape suite runs in CI again.
 8. **Playwright specs assumed every seed question is on the first page of the practice list** (25 per page, now 170 questions): 8 of 19 failed on a fresh stack. The specs now type the title into the search box first; the app already had search and *Load more*. One spec's `login()` also returned before the post-login redirect had finished, so its next `goto` was interrupted. It now waits for the redirect.
 
 ## Known gaps and honest caveats
