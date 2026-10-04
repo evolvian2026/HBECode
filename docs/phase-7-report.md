@@ -82,8 +82,8 @@ Lint and typecheck are clean.
    - *Gas Station* claimed a unique answer that was not unique; it now asks for the smallest index.
    - A web hover check that required no CSS transition, now stated in the question.
    - A Kelvin rounding question where `toFixed` and `Math.round` disagree at .x5, now 2 decimals.
-9. **CI had been red since Phase 6 for two reasons unrelated to the bank**, both fixed: the API typecheck ran before the API was built, while a Phase 6 test imports its `dist` (it passed locally only because `dist` existed); and the executor job failed at setup because `aquasecurity/trivy-action@0.28.0` no longer resolves (the project's tags are `v`-prefixed now). It is now pinned to the `v0.36.0` commit SHA. With that, the sandbox-escape suite runs in CI again.
 8. **Playwright specs assumed every seed question is on the first page of the practice list** (25 per page, now 170 questions): 8 of 19 failed on a fresh stack. The specs now type the title into the search box first; the app already had search and *Load more*. One spec's `login()` also returned before the post-login redirect had finished, so its next `goto` was interrupted. It now waits for the redirect.
+9. **CI had been red since Phase 6 for two reasons unrelated to the bank**, both fixed: the API typecheck ran before the API was built, while a Phase 6 test imports its `dist` (it passed locally only because `dist` existed); and the executor job failed at setup because `aquasecurity/trivy-action@0.28.0` no longer resolves (the project's tags are `v`-prefixed now). It is now pinned to the `v0.36.0` commit SHA. With that, the sandbox-escape suite runs in CI again.
 
 ## Known gaps and honest caveats
 
