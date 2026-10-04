@@ -1,6 +1,5 @@
 import type { CodingQuestionInput, DbQuestionInput, WebQuestionInput } from '@hbe/shared';
 import { customerTotals, monthlyRevenue, topEarner } from '../questions/db-questions.js';
-import { profileCard, shoppingCart, todoList } from '../questions/web-questions.js';
 import { ARRAYS } from './coding/arrays.js';
 import { DP } from './coding/dp.js';
 import { GREEDY } from './coding/greedy.js';
@@ -9,6 +8,9 @@ import { MATH } from './coding/math.js';
 import { SORTING } from './coding/sorting.js';
 import { STRINGS } from './coding/strings.js';
 import { TREES } from './coding/trees.js';
+import { DOM } from './web/dom.js';
+import { HTML_CSS } from './web/html-css.js';
+import { REACT } from './web/react.js';
 
 export type BankQuestion = CodingQuestionInput | WebQuestionInput | DbQuestionInput;
 export interface BankStack {
@@ -33,9 +35,9 @@ export const BANK: BankStack[] = [
   { id: 'trees', label: 'Trees & graphs', kind: 'coding', questions: TREES },
   { id: 'dp', label: 'Dynamic programming', kind: 'coding', questions: DP },
   { id: 'greedy', label: 'Greedy & intervals', kind: 'coding', questions: GREEDY },
-  { id: 'html-css', label: 'HTML & CSS layout', kind: 'web', questions: [profileCard] },
-  { id: 'dom', label: 'JavaScript DOM', kind: 'web', questions: [todoList] },
-  { id: 'react', label: 'React', kind: 'web', questions: [shoppingCart] },
+  { id: 'html-css', label: 'HTML & CSS layout', kind: 'web', questions: HTML_CSS },
+  { id: 'dom', label: 'JavaScript DOM', kind: 'web', questions: DOM },
+  { id: 'react', label: 'React', kind: 'web', questions: REACT },
   { id: 'sql-joins', label: 'SQL joins & subqueries', kind: 'db', questions: [topEarner] },
   { id: 'mongo-agg', label: 'MongoDB aggregation', kind: 'db', questions: [customerTotals] },
   { id: 'pandas', label: 'Pandas', kind: 'db', questions: [monthlyRevenue] },
