@@ -24,10 +24,11 @@ interface Report {
   }[];
 }
 interface Plag {
-  run: { id: string; status: string; createdAt: string; finishedAt: string | null; counts: { submissions?: number; groups?: number; flagged?: number } | null; params: { threshold?: number } | null; error: string | null } | null;
-  pairs: { questionId: string; question: string; subA: string; subB: string; a: { name: string; email: string }; b: { name: string; email: string }; similarity: number; matched: number }[];
+  run: { id: string; status: string; createdAt: string; finishedAt: string | null; counts: { submissions?: number; otherTests?: number; groups?: number; flagged?: number } | null; params: { threshold?: number; scope?: 'test' | 'institution' } | null; error: string | null } | null;
+  pairs: { questionId: string; question: string; subA: string; subB: string; a: Who; b: Who; similarity: number; matched: number }[];
 }
-interface Side { submissionId: string; name: string; email: string; runtime: string; submittedAt: string; source: string; regions: [number, number][] }
+interface Who { name: string; email: string; test: { id: string; title: string } }
+interface Side { submissionId: string; name: string; email: string; runtime: string; submittedAt: string; test: { id: string; title: string }; source: string; regions: [number, number][] }
 interface Pair { similarity: number; matched: number; a: Side; b: Side }
 
 const STATUS_TONE: Record<string, 'slate' | 'green' | 'red' | 'amber' | 'blue'> = { in_progress: 'blue', submitted: 'green', auto_submitted: 'amber', terminated: 'red', not_started: 'slate' };
@@ -44,6 +45,7 @@ export default function TestReport() {
     if (user && id) void load();
   }, [user, id, load]);
   if (!user) return null;
+  const canExport = user.role === 'client_admin' || user.role === 'teacher'; // associates view only
   const exp = (format: 'csv' | 'xlsx') => downloadFile(`/api/v1/reports/tests/${id}/export?format=${format}`, `test-report.${format}`).catch(setError);
   const students = r
     ? [...r.students].sort((a, b) =>
@@ -58,8 +60,8 @@ export default function TestReport() {
       actions={r && (
         <div className="flex gap-2 print:hidden">
           <Link className="btn-secondary" href={`/tests/monitor?id=${id}`}>Monitor</Link>
-          <button className="btn-secondary" onClick={() => void exp('csv')}>Export CSV</button>
-          <button className="btn-secondary" onClick={() => void exp('xlsx')}>Export Excel</button>
+          {canExport && <button className="btn-secondary" onClick={() => void exp('csv')}>Export CSV</button>}
+          {canExport && <button className="btn-secondary" onClick={() => void exp('xlsx')}>Export Excel</button>}
           <button className="btn-secondary" onClick={() => window.print()}>Print / PDF</button>
         </div>
       )}
@@ -149,6 +151,7 @@ function Plagiarism({ testId, manage, onDone }: { testId: string; manage: boolea
   const [p, setP] = useState<Plag | null>(null);
   const [error, setError] = useState<unknown>(null);
   const [open, setOpen] = useState<Pair | null>(null);
+  const [scope, setScope] = useState<'test' | 'institution'>('test');
   const load = useCallback(() => get<Plag>(`/api/v1/tests/${testId}/plagiarism`).then((x) => (setP(x), x)).catch((e) => (setError(e), null)), [testId]);
   const busy = p?.run?.status === 'queued' || p?.run?.status === 'running';
   useEffect(() => {
@@ -164,7 +167,7 @@ function Plagiarism({ testId, manage, onDone }: { testId: string; manage: boolea
   }, [busy, load, onDone]);
   const run = async () => {
     setError(null);
-    await post(`/api/v1/tests/${testId}/plagiarism`).catch(setError);
+    await post(`/api/v1/tests/${testId}/plagiarism`, { scope }).catch(setError);
     await load();
   };
   const show = async (x: Plag['pairs'][number]) => {
@@ -173,7 +176,15 @@ function Plagiarism({ testId, manage, onDone }: { testId: string; manage: boolea
   return (
     <Section
       title="Similarity check"
-      actions={manage && <button className="btn-primary" disabled={busy} onClick={() => void run()}>{busy ? <><Spinner /> Checking…</> : p?.run ? 'Run again' : 'Run similarity check'}</button>}
+      actions={manage && (
+        <>
+          <select className="input w-auto py-1" aria-label="Compare with" value={scope} disabled={busy} onChange={(e) => setScope(e.target.value as typeof scope)}>
+            <option value="test">Within this test</option>
+            <option value="institution">Also other tests with the same questions</option>
+          </select>
+          <button className="btn-primary" disabled={busy} onClick={() => void run()}>{busy ? <><Spinner /> Checking…</> : p?.run ? 'Run again' : 'Run similarity check'}</button>
+        </>
+      )}
     >
       <ErrorBox error={error} />
       {!p ? <Spinner /> : !p.run ? (
@@ -182,7 +193,7 @@ function Plagiarism({ testId, manage, onDone }: { testId: string; manage: boolea
         <>
           <p className="mb-2 text-sm text-slate-600 dark:text-slate-400" data-testid="plag-status">
             {p.run.status === 'done'
-              ? `Checked ${p.run.counts?.submissions ?? 0} submissions on ${when(p.run.finishedAt)}: ${p.pairs.length} pair${p.pairs.length === 1 ? '' : 's'} at or above ${Math.round((p.run.params?.threshold ?? 0.75) * 100)}% similarity.`
+              ? `Checked ${p.run.counts?.submissions ?? 0} submissions${p.run.params?.scope === 'institution' ? ` against ${p.run.counts?.otherTests ?? 0} answers from other tests` : ''} on ${when(p.run.finishedAt)}: ${p.pairs.length} pair${p.pairs.length === 1 ? '' : 's'} at or above ${Math.round((p.run.params?.threshold ?? 0.75) * 100)}% similarity.`
               : p.run.status === 'failed' ? `The check failed: ${p.run.error ?? 'unknown error'}` : 'Checking…'}
           </p>
           <p className="mb-3 text-xs text-slate-500">Similarity compares the structure of the code (names, literals and starter code are ignored). A high score is a reason to look, not proof of copying.</p>
@@ -193,8 +204,8 @@ function Plagiarism({ testId, manage, onDone }: { testId: string; manage: boolea
                 {p.pairs.map((x) => (
                   <tr key={`${x.questionId}:${x.subA}:${x.subB}`}>
                     <td className="py-1.5">{x.question}</td>
-                    <td>{x.a.name}</td>
-                    <td>{x.b.name}</td>
+                    <td><Person who={x.a} testId={testId} /></td>
+                    <td><Person who={x.b} testId={testId} /></td>
                     <td className="text-right font-medium tabular-nums">{x.similarity}%</td>
                     <td className="text-right print:hidden"><button className="text-brand-600 hover:underline dark:text-brand-100" onClick={() => void show(x)}>Compare</button></td>
                   </tr>
@@ -220,12 +231,22 @@ function Plagiarism({ testId, manage, onDone }: { testId: string; manage: boolea
   );
 }
 
+/** A student in a pair; answers from another test are labelled with that test. */
+function Person({ who, testId }: { who: Who; testId: string }) {
+  return (
+    <>
+      {who.name}
+      {who.test.id !== testId && <span className="ml-1 text-xs text-slate-500" data-testid="other-test">in {who.test.title}</span>}
+    </>
+  );
+}
+
 function Source({ side }: { side: Side }) {
   const hit = (n: number) => side.regions.some(([a, b]) => n >= a && n <= b);
   return (
     <div className="min-w-0 rounded-md border border-slate-200 dark:border-slate-800">
       <div className="border-b border-slate-200 px-2 py-1 text-xs dark:border-slate-800">
-        <b>{side.name}</b> <span className="text-slate-500">{side.email} · {side.runtime} · {when(side.submittedAt)}</span>
+        <b>{side.name}</b> <span className="text-slate-500">{side.email} · {side.test.title} · {side.runtime} · {when(side.submittedAt)}</span>
       </div>
       <pre className="max-h-[480px] overflow-auto py-1 font-mono text-xs leading-5">
         {side.source.split('\n').map((line, i) => (

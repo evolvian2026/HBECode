@@ -1,4 +1,4 @@
-import { Controller, Get, HttpCode, Param, ParseUUIDPipe, Post, Query, Res } from '@nestjs/common';
+import { Body, Controller, Get, HttpCode, Param, ParseUUIDPipe, Post, Query, Res } from '@nestjs/common';
 import type { FastifyReply } from 'fastify';
 import { z } from 'zod';
 import { AuditService } from '../common/audit.service.js';
@@ -10,6 +10,7 @@ import { toCsv, toXlsx } from './exports.js';
 import { ReportsService } from './reports.service.js';
 
 const ExportQuery = z.object({ format: z.enum(['csv', 'xlsx']) });
+const StartPlagiarism = z.object({ scope: z.enum(['test', 'institution']).default('test') }).optional(); // no body = this test only
 const MIME = { csv: 'text/csv; charset=utf-8', xlsx: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' };
 
 @Controller('reports')
@@ -39,7 +40,8 @@ export class ReportsController {
     return this.reports.testReport(u, id);
   }
 
-  @RequireRoles('client_admin', 'teacher', 'associate')
+  // Exports carry personal data out of the platform: admins and teachers only (associates view on screen).
+  @RequireRoles('client_admin', 'teacher')
   @Get('tests/:id/export')
   async testExport(@CurrentUser() u: AuthUser, @Param('id', ParseUUIDPipe) id: string, @Query(zp(ExportQuery)) q: z.infer<typeof ExportQuery>, @Meta() meta: RequestMeta, @Res() reply: FastifyReply) {
     const r = await this.reports.testReport(u, id);
@@ -60,7 +62,8 @@ export class ReportsController {
     return this.reports.batchReport(u, id);
   }
 
-  @RequireRoles('client_admin', 'teacher', 'associate')
+  // Exports carry personal data out of the platform: admins and teachers only (associates view on screen).
+  @RequireRoles('client_admin', 'teacher')
   @Get('batches/:id/export')
   async batchExport(@CurrentUser() u: AuthUser, @Param('id', ParseUUIDPipe) id: string, @Query(zp(ExportQuery)) q: z.infer<typeof ExportQuery>, @Meta() meta: RequestMeta, @Res() reply: FastifyReply) {
     const r = await this.reports.batchReport(u, id);
@@ -105,8 +108,8 @@ export class PlagiarismController {
   @RequirePermission('test:manage')
   @Post('tests/:id/plagiarism')
   @HttpCode(202)
-  start(@CurrentUser() u: AuthUser, @Param('id', ParseUUIDPipe) id: string, @Meta() meta: RequestMeta) {
-    return this.plag.start(u, id, meta);
+  start(@CurrentUser() u: AuthUser, @Param('id', ParseUUIDPipe) id: string, @Body(zp(StartPlagiarism)) body: z.infer<typeof StartPlagiarism>, @Meta() meta: RequestMeta) {
+    return this.plag.start(u, id, meta, body?.scope ?? 'test');
   }
 
   @RequirePermission('test:proctor')

@@ -7,7 +7,7 @@ export interface Group {
   type: string;
   lang: string;
   starter: string;
-  docs: { id: string; code: string }[];
+  docs: { id: string; code: string; owner?: string; focus?: boolean }[];
 }
 export interface WorkerInput {
   groups: Group[];
@@ -22,7 +22,7 @@ try {
   const out: { questionId: string; pairs: PairResult[] }[] = [];
   for (const g of input.groups) {
     const starter = fingerprints(tokenize(sourceOf(g.starter, g.type), g.lang), input.k, input.w);
-    const docs = g.docs.map((d) => ({ id: d.id, fp: subtract(fingerprints(tokenize(sourceOf(d.code, g.type), g.lang), input.k, input.w), starter) }));
+    const docs = g.docs.map((d) => ({ id: d.id, owner: d.owner, focus: d.focus, fp: subtract(fingerprints(tokenize(sourceOf(d.code, g.type), g.lang), input.k, input.w), starter) }));
     out.push({ questionId: g.questionId, pairs: comparePairs(docs, input) });
   }
   parentPort!.postMessage({ ok: true, out });

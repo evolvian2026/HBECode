@@ -2,6 +2,7 @@ import { Agent } from './agent.js';
 import { prepareCgroups } from './cgroups.js';
 import { loadConfig } from './config.js';
 import { detectRuntimes, probeRunner } from './versions.js';
+import { warmUp } from './warmup.js';
 
 const log = (msg: string, extra: Record<string, unknown> = {}) =>
   process.stdout.write(`${JSON.stringify({ time: new Date().toISOString(), level: 'info', svc: 'executor', msg, ...extra })}\n`);
@@ -20,6 +21,7 @@ if (available.length === 0) {
 }
 log('executor starting', { executorId: cfg.executorId, slots: cfg.slots, cgroupV2: cfg.cgroupV2, runtimes: available, versions });
 
+await warmUp(cfg, available, log);
 const agent = new Agent(cfg, available, versions, log);
 
 // DB runners that were not reachable yet (e.g. MySQL still initialising after a reboot) are

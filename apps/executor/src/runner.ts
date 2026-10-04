@@ -106,8 +106,9 @@ async function runCodingJob(cfg: ExecutorConfig, job: CodingJob): Promise<ExecRe
 
     let compileWall = 0;
     if (spec.compile) {
-      const c = await runInJail(cfg, {
-        argv: spec.compile({ memMb: job.limits.memMb }),
+      const argv = spec.compile({ memMb: job.limits.memMb });
+      const compile = () => runInJail(cfg, {
+        argv,
         env: spec.env,
         workdir: dir,
         writableBox: true,
@@ -123,6 +124,10 @@ async function runCodingJob(cfg: ExecutorConfig, job: CodingJob): Promise<ExecRe
         extraMounts: spec.mounts,
         cpuMsPerSec: COMPILE_LIMITS.cpuMsPerSec,
       });
+      let c = await compile();
+      // A compile that ran out of wall time while barely using CPU was starved by the machine
+      // (cold disk cache, a burst of jobs), not by the student's code: try once more.
+      if (c.stats?.wallTimeout && c.stats.cpuMs < COMPILE_LIMITS.wallMs / 2) c = await compile();
       compileWall = c.wallMs;
       if (!c.stats) {
         return { ...base, compile: { ok: false, output: '', wallMs: compileWall }, tests: [], internalError: c.jailError ?? 'compile jail failed' };

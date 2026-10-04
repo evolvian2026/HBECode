@@ -185,6 +185,10 @@ function lineRanges(fp: Fingerprints, hashes: Iterable<number>, k: number): [num
 export interface Doc {
   id: string;
   fp: Fingerprints;
+  /** Same owner (one student's answers in two tests) is never a pair. */
+  owner?: string;
+  /** `false` = context only (another test): compared with focus documents, not with each other. */
+  focus?: boolean;
 }
 
 export interface PairResult {
@@ -213,6 +217,9 @@ export function comparePairs(docs: Doc[], opts: { threshold: number; minFingerpr
   for (const list of index.values()) {
     if (list.length < 2 || list.length > Math.max(50, n * 0.6)) continue; // ubiquitous fingerprints say nothing
     for (let x = 0; x < list.length; x++) for (let y = x + 1; y < list.length; y++) {
+      const A = docs[list[x]!]!;
+      const B = docs[list[y]!]!;
+      if ((A.owner !== undefined && A.owner === B.owner) || (A.focus === false && B.focus === false)) continue;
       const key = list[x]! * n + list[y]!;
       shared.set(key, (shared.get(key) ?? 0) + 1);
     }

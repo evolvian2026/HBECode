@@ -64,12 +64,25 @@ Lint and typecheck are clean. Dark mode, the charts and the compare view were ch
 ## Known gaps and honest caveats
 
 1. **Staff reports cover the whole institution.** There is no staff ↔ batch/test assignment yet, so every teacher and associate of an institution sees all of its reports, as with the Phase 4 monitor. Tell me if institutions need "my batches only".
-2. **Similarity is evidence, not proof.** Short or very standard solutions (for example a one-line `sum(a)`) are too small to fingerprint and are skipped (fewer than 10 fingerprints). Students who all type the textbook answer can look alike. SQL answers are not checked. Only answers within one test are compared, not answers across tests or against the internet.
+2. **Similarity is evidence, not proof.** Short or very standard solutions (for example a one-line `sum(a)`) are too small to fingerprint and are skipped (fewer than 10 fingerprints). Students who all type the textbook answer can look alike. SQL answers are not checked. By default only answers within one test are compared; the institution-wide option adds the institution's other tests. Answers are never compared against the internet or other institutions.
 3. **PDF is the browser's print view**, not a server-generated file.
 4. Exports are built in the request. That is fine for the pilot's class sizes (a 1,000-student test report is 481 KB of JSON). Institution-wide multi-year exports would need a background job.
 5. Rollups can be off by one in a rare race (two first-solves of the same question at the same instant). The daily rebuild corrects it.
 6. The platform page is not covered by a browser test: the super admin needs a TOTP code whose secret the earlier admin spec created. The API test covers the endpoint and its access rules.
 7. Latency was measured in-process on a dev box, not over the network on the free-tier stack (Phase 8).
+
+## Follow-up after review
+
+Both changes agreed in review were made before Phase 7, plus one bug fix:
+
+1. **Exports are for institution admins and teachers only.** Associates still see every report on screen, but the export buttons are hidden and the API returns 403 (tested for test and batch exports).
+2. **Similarity across tests.** Next to *Run similarity check* a teacher can choose *Also other tests with the same questions*. This test's answers are then also compared with every graded answer to the same questions in the institution's other tests. Pairs show which test each answer came from ("in Section A test"), and the compare view names both tests. Answers from other tests are compared only with this test's answers, never with each other, and a student is never paired with their own earlier answer. Tested: a winnowing unit test, an API test (section B copies a section-A answer → 4 expected pairs, and no self-pairs or A–A pairs), and the browser spec.
+
+3. **Executor cold start (bug found while re-testing).** After the dev box rebooted, the seed question's Go and C# reference solutions hit the 20 s compile limit again, this time with no Mongo trouble (even C needed 6.9 s; the 5 GB toolchain image was cold on disk and eight compilers started at once). A freshly booted executor VM would show students false *Compilation timed out* errors the same way. Two changes:
+   - The executor now **compiles and runs a tiny program in each language, one at a time, before it claims any job** (about 5 s in total; logged as `warm-up ok`).
+   - A compile that runs out of wall time while using less than half of it in CPU (starved by the machine, not by the code) is **retried once** before it is reported as a compile error.
+
+   After the fix, a fresh start validated all 7 seed questions on the first try, and 19/19 browser tests passed. Caveat: dropping the page cache inside this sandbox did not make the toolchains cold again, so the exact cold-boot case was not reproduced a second time, and the retry path is not covered by an automated test.
 
 ## Sign-ins needed
 

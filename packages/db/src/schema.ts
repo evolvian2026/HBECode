@@ -543,7 +543,7 @@ export const plagiarismRuns = hbe.table('plagiarism_runs', {
   tenantId: uuid('tenant_id'),
   testId: uuid('test_id').notNull(),
   status: text('status').$type<'queued' | 'running' | 'done' | 'failed'>().notNull().default('queued'),
-  params: jsonb('params').$type<{ threshold?: number; k?: number; w?: number }>().notNull().default({}),
+  params: jsonb('params').$type<{ threshold?: number; k?: number; w?: number; scope?: 'test' | 'institution' }>().notNull().default({}),
   counts: jsonb('counts').$type<Record<string, number>>().notNull().default({}),
   error: text('error'),
   createdBy: uuid('created_by'),

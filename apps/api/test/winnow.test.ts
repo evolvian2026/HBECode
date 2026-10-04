@@ -57,6 +57,12 @@ describe('similarity', () => {
     expect(pairs[0]!.regions.a[0]![0]).toBeLessThanOrEqual(5);
     expect(pairs[0]!.regions.b.at(-1)![1]).toBeGreaterThanOrEqual(11);
   });
+  it('never pairs a student with themselves, and context documents only with focus documents', () => {
+    const d = (id: string, src: string, owner: string, focus: boolean) => ({ ...doc(id, src), owner, focus });
+    const pairs = comparePairs([d('mine-t1', ORIGINAL, 'u1', false), d('mine-t2', ORIGINAL, 'u1', true), d('other-t1', DISGUISED, 'u2', false), d('third-t1', ORIGINAL, 'u3', false)], opts);
+    // u1's two answers are not a pair; u2/u3 (both context) are not compared with each other.
+    expect(pairs.map((p) => [p.a, p.b].sort().join('+')).sort()).toEqual(['mine-t2+other-t1', 'mine-t2+third-t1']);
+  });
   it('does not flag independent solutions, or code that is only the starter', () => {
     const all = comparePairs([doc('own', INDEPENDENT), doc('orig', ORIGINAL), doc('stub1', STUB), doc('stub2', STUB + '\n')], { ...opts, threshold: 0.3 });
     expect(all.find((p) => p.a.startsWith('stub') || p.b.startsWith('stub'))).toBeUndefined();

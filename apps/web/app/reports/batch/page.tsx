@@ -22,14 +22,15 @@ export default function BatchReport() {
     if (user && id) get<BReport>(`/api/v1/reports/batches/${id}`).then(setR).catch(setError);
   }, [user, id]);
   if (!user) return null;
+  const canExport = user.role === 'client_admin' || user.role === 'teacher'; // associates view only
   const exp = (format: 'csv' | 'xlsx') => downloadFile(`/api/v1/reports/batches/${id}/export?format=${format}`, `batch-report.${format}`).catch(setError);
   return (
     <Page
       title={r ? `Report · ${r.batch.name}` : 'Batch report'}
       actions={r && (
         <div className="flex gap-2 print:hidden">
-          <button className="btn-secondary" onClick={() => void exp('csv')}>Export CSV</button>
-          <button className="btn-secondary" onClick={() => void exp('xlsx')}>Export Excel</button>
+          {canExport && <button className="btn-secondary" onClick={() => void exp('csv')}>Export CSV</button>}
+          {canExport && <button className="btn-secondary" onClick={() => void exp('xlsx')}>Export Excel</button>}
           <button className="btn-secondary" onClick={() => window.print()}>Print / PDF</button>
         </div>
       )}

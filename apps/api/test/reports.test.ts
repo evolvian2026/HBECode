@@ -141,8 +141,11 @@ describe('test report', () => {
     expect(sheet.rows[0]!.cells.slice(0, 4)).toEqual(['Name', 'Email', 'Status', 'Score']);
     expect(sheet.rows).toHaveLength(4);
     expect((await c.teacherB!.get(`/api/v1/reports/tests/${testId}/export?format=csv`)).statusCode).toBe(404);
+    // Associates view reports on screen but cannot take personal data out.
+    expect((await c.associateA!.get(`/api/v1/reports/tests/${testId}/export?format=csv`)).statusCode).toBe(403);
+    expect((await c.adminA!.get(`/api/v1/reports/tests/${testId}/export?format=csv`)).statusCode).toBe(200);
     const audit = await systemQuery<{ n: number }>(t, `SELECT count(*)::int AS n FROM hbe.audit_logs WHERE action = 'report.export'`);
-    expect(audit[0]!.n).toBe(2);
+    expect(audit[0]!.n).toBe(3);
   });
 });
 
@@ -202,6 +205,10 @@ describe('question, student, batch and institution reports', () => {
     expect(r.tests).toEqual([expect.objectContaining({ id: testId, taken: 3, average: 66.7 })]);
     expect(r.students.find((s: { userId: string }) => s.userId === org.users.studentA.id).cells[0]).toEqual({ status: 'submitted', percent: 100 });
     expect((await c.teacherB!.get(`/api/v1/reports/batches/${batchId}`)).statusCode).toBe(404);
+    const xlsx = await c.teacherA!.get(`/api/v1/reports/batches/${batchId}/export?format=xlsx`);
+    expect(xlsx.statusCode).toBe(200);
+    expect(xlsx.rawPayload.subarray(0, 2).toString()).toBe('PK');
+    expect((await c.associateA!.get(`/api/v1/reports/batches/${batchId}/export?format=csv`)).statusCode).toBe(403);
   });
   it('institution overview, with too-easy / too-hard flags at 30+ students', async () => {
     let r = (await c.adminA!.get('/api/v1/reports/overview')).json();
@@ -228,5 +235,64 @@ describe('question, student, batch and institution reports', () => {
     expect(r.queue.lists).toMatchObject({ run: 0, submit: 0, practice: 0, validate: 0 });
     expect(r.executors.map((e: { id: string }) => e.id)).toContain('fake-1');
     expect(r.daily).toHaveLength(30);
+  });
+});
+
+describe('plagiarism across tests', () => {
+  it('institution scope compares with the same question in other tests; never a student with themselves', async () => {
+    // Section B sits the same question a day later: one student copies a section-A answer, and a
+    // student who took both tests re-submits their own earlier answer.
+    const COPY_C = 'def sum_array(arr):\n    acc = 0\n    for el in arr:\n        if el is not None:\n            acc = acc + el\n        else:\n            acc = acc + 0\n    return acc\n';
+    const now = Date.now();
+    const test2 = (await c.teacherA!.post('/api/v1/tests', { title: 'Section B test', startsAt: new Date(now - 60_000).toISOString(), endsAt: new Date(now + 3600_000).toISOString(), durationMin: 30, questions: [{ questionId, points: 50 }] })).json().id as string;
+    await c.teacherA!.post(`/api/v1/tests/${test2}/assign`, { userIds: [extra[1]!.id, org.users.studentA.id] });
+    await c.teacherA!.post(`/api/v1/tests/${test2}/publish`);
+    c.s4 = new Client(t);
+    await c.s4.login(extra[1]!.email, PASSWORD);
+    for (const [cl, code] of [[c.s4, COPY_C], [c.s1!, COPY_A]] as const) {
+      const s = (await cl.post(`/api/v1/tests/${test2}/attempt`, {})).json() as { attemptId: string; token: string };
+      await cl.req('POST', '/api/v1/submissions', { questionId, runtime: 'python', code, kind: 'submit', attemptId: s.attemptId }, { [H]: s.token });
+      await grade();
+      await cl.req('POST', `/api/v1/attempts/${s.attemptId}/submit`, {}, { [H]: s.token });
+    }
+    type Res = { run: { id: string; status: string; params: { scope: string }; counts: Record<string, number> }; pairs: { a: { email: string; test: { id: string; title: string } }; b: { email: string; test: { id: string; title: string } }; subA: string; subB: string; questionId: string }[] };
+    const check = async (body?: unknown): Promise<Res> => {
+      expect((await c.teacherA!.post(`/api/v1/tests/${test2}/plagiarism`, body)).statusCode).toBe(202);
+      let res: Res | undefined;
+      for (let i = 0; i < 100; i++) {
+        res = (await c.teacherA!.get(`/api/v1/tests/${test2}/plagiarism`)).json();
+        if (res!.run.status === 'done' || res!.run.status === 'failed') break;
+        await new Promise((r) => setTimeout(r, 50));
+      }
+      return res!;
+    };
+    // This test only (the default): the one copy inside section B.
+    const own = await check();
+    expect(own.run).toMatchObject({ status: 'done', params: { scope: 'test' }, counts: { submissions: 2, otherTests: 0, flagged: 1 } });
+    expect(await c.teacherA!.post(`/api/v1/tests/${test2}/plagiarism`, { scope: 'everything' }).then((r) => r.statusCode)).toBe(400);
+
+    const wide = await check({ scope: 'institution' });
+    expect(wide.run).toMatchObject({ status: 'done', params: { scope: 'institution' }, counts: { submissions: 2, otherTests: 3 } });
+    const key = (p: Res['pairs'][number]) => [`${p.a.email}@${p.a.test.title}`, `${p.b.email}@${p.b.test.title}`].sort().join(' ~ ');
+    const A = org.users.studentA.email;
+    const A2 = org.users.studentA2.email;
+    const D = extra[1]!.email;
+    expect(wide.pairs.map(key).sort()).toEqual(
+      [
+        [`${A}@Section B test`, `${D}@Section B test`],
+        [`${A}@Report test`, `${D}@Section B test`],
+        [`${A2}@Report test`, `${D}@Section B test`],
+        [`${A2}@Report test`, `${A}@Section B test`],
+      ].map((x) => x.sort().join(' ~ ')).sort(),
+    );
+    // Never a student with their own earlier answer; never two section-A answers with each other.
+    for (const p of wide.pairs) {
+      expect(p.a.email).not.toBe(p.b.email);
+      expect([p.a.test.id, p.b.test.id]).toContain(test2);
+    }
+    // The compare view names the other test.
+    const cross = wide.pairs.find((p) => p.a.test.id !== p.b.test.id)!;
+    const detail = (await c.teacherA!.get(`/api/v1/plagiarism/${wide.run.id}/pairs/${cross.questionId}/${cross.subA}/${cross.subB}`)).json();
+    expect([detail.a.test.title, detail.b.test.title].sort()).toEqual(['Report test', 'Section B test']);
   });
 });

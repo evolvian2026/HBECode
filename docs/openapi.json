@@ -7364,7 +7364,7 @@
           "reports"
         ],
         "summary": "Test report as CSV or Excel (audited)",
-        "description": "Requires role client_admin | teacher | associate.",
+        "description": "Requires role client_admin | teacher.",
         "security": [
           {
             "session": []
@@ -7497,7 +7497,7 @@
           "reports"
         ],
         "summary": "Batch report as CSV or Excel (audited)",
-        "description": "Requires role client_admin | teacher | associate.",
+        "description": "Requires role client_admin | teacher.",
         "security": [
           {
             "session": []
@@ -7679,7 +7679,7 @@
         "tags": [
           "reports"
         ],
-        "summary": "Start a code-similarity check for a test (runs in the background; audited)",
+        "summary": "Start a code-similarity check for a test (runs in the background; audited). scope=institution also compares with the same questions in the institution's other tests",
         "description": "Requires permission `test:manage`.",
         "security": [
           {
@@ -7696,6 +7696,27 @@
             }
           }
         ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$schema": "https://json-schema.org/draft/2020-12/schema",
+                "type": "object",
+                "properties": {
+                  "scope": {
+                    "default": "test",
+                    "type": "string",
+                    "enum": [
+                      "test",
+                      "institution"
+                    ]
+                  }
+                }
+              }
+            }
+          }
+        },
         "responses": {
           "202": {
             "description": "Success"

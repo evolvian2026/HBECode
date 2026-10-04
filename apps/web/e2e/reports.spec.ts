@@ -154,6 +154,11 @@ test('teacher reviews the overview and a test report, exports it and compares a 
   await expect(compare).toContainText('% similar');
   expect(await compare.locator('[data-match]').count()).toBeGreaterThan(4);
   await expect(rows.filter({ hasText: 'Demo student 2' }).locator('td').nth(6)).toHaveText(/^\d+%$/);
+  // Again, also against the institution's other tests with the same question.
+  await page.getByLabel('Compare with').selectOption('institution');
+  await page.getByRole('button', { name: 'Run again' }).click();
+  await expect(page.getByTestId('plag-status')).toContainText('answers from other tests', { timeout: 60_000 });
+  await expect(page.getByTestId('plag-pairs').locator('tbody tr').filter({ hasText: 'Demo student 2' }).first()).toBeVisible();
   if (shots) await page.screenshot({ path: `${shots}/p6-02-test-report.png`, fullPage: true });
 
   // Student: own progress, with the released score.
