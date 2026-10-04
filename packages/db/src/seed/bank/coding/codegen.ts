@@ -12,17 +12,19 @@ import type { RuntimeId } from '@hbe/shared';
  *   T[]                            → length n, then the n items on one line
  *   int[][]                        → "rows cols", then one line per row
  *   list (singly linked list)      → like int[]; the driver builds the ListNode chain
+ *   tree (binary tree, input only) → length n, then n level-order tokens: integers or "null"
+ *                                    (LeetCode layout: children are listed only for non-null nodes)
  * Output: scalars on one line (bool as true/false, double with 6 decimals), arrays and lists as
  * one space-separated line, int[][] as one line per row.
  */
 
-export type ParamType = 'int' | 'long' | 'double' | 'string' | 'int[]' | 'long[]' | 'double[]' | 'string[]' | 'int[][]' | 'list';
+export type ParamType = 'int' | 'long' | 'double' | 'string' | 'int[]' | 'long[]' | 'double[]' | 'string[]' | 'int[][]' | 'list' | 'tree';
 export type ReturnType = ParamType | 'bool';
 export interface Param {
   name: string;
   type: ParamType;
 }
-export type Value = number | bigint | string | boolean | Value[];
+export type Value = number | bigint | string | boolean | null | Value[];
 
 export interface Solution {
   body: string;
@@ -36,6 +38,7 @@ const isArray = (t: ReturnType) => t.endsWith('[]') && t !== 'int[][]';
 /** On the wire a linked list is an int array. */
 const wire = (t: ReturnType): ReturnType => (t === 'list' ? 'int[]' : t);
 const usesList = (params: readonly Param[], ret: ReturnType) => ret === 'list' || params.some((p) => p.type === 'list');
+const usesTree = (params: readonly Param[]) => params.some((p) => p.type === 'tree');
 const elem = (t: ReturnType) => t.replace('[]', '') as 'int' | 'long' | 'double' | 'string';
 
 export const snake = (s: string) => s.replace(/([a-z0-9])([A-Z])/g, '$1_$2').toLowerCase();
@@ -54,6 +57,14 @@ function check(type: ParamType | ReturnType, v: Value, where: string): void {
   const fail = (why: string) => {
     throw new Error(`${where}: ${why}`);
   };
+  if (t === 'tree') {
+    if (!Array.isArray(v)) fail('not an array');
+    const a = v as Value[];
+    if (a.length && a[0] === null) fail('a non-empty tree must start with a value');
+    if (a.length && a[a.length - 1] === null) fail('trailing nulls must be trimmed');
+    a.forEach((x) => x === null || check('int', x, where));
+    return;
+  }
   if (t === 'int' && (typeof v !== 'number' || !Number.isInteger(v) || v < -(2 ** 31) || v >= 2 ** 31)) fail(`not a 32-bit int: ${String(v)}`);
   if (t === 'long' && !(typeof v === 'bigint' || (typeof v === 'number' && Number.isSafeInteger(v)))) fail(`not a safe long: ${String(v)}`);
   if (t === 'double' && (typeof v !== 'number' || !Number.isFinite(v))) fail(`not a double: ${String(v)}`);
@@ -85,7 +96,10 @@ export function encodeInput(params: readonly Param[], args: readonly Value[]): s
     const v = args[i]!;
     const t = wire(p.type);
     check(t, v, `argument ${p.name}`);
-    if (t === 'int[][]') {
+    if (t === 'tree') {
+      const a = v as Value[];
+      out += `${a.length}\n${a.map((x) => (x === null ? 'null' : String(x))).join(' ')}\n`;
+    } else if (t === 'int[][]') {
       const rows = v as Value[][];
       out += `${rows.length} ${rows[0]?.length ?? 0}\n` + rows.map((r) => r.join(' ') + '\n').join('');
     } else if (isArray(t)) {
@@ -111,7 +125,8 @@ export function formatText(params: readonly Param[], ret: ReturnType): { inputFo
   const lines: string[] = [];
   const word = (t: string) => ({ int: 'integer', long: 'integer', double: 'real number', string: 'word (no spaces)' })[t] ?? t;
   for (const p of params) {
-    if (p.type === 'list') lines.push(`- A line with the length of the linked list \`${p.name}\`, then a line with its node values from head to tail (length 0 means an empty list).`);
+    if (p.type === 'tree') lines.push(`- A line with the number of tokens of the binary tree \`${p.name}\`, then a line with the tree in level order: node values or \`null\` for a missing child (children are listed only for non-null nodes; length 0 means an empty tree).`);
+    else if (p.type === 'list') lines.push(`- A line with the length of the linked list \`${p.name}\`, then a line with its node values from head to tail (length 0 means an empty list).`);
     else if (p.type === 'int[][]') lines.push(`- A line with two integers **r c** (rows and columns of \`${p.name}\`), then **r** lines of **c** space-separated integers.`);
     else if (isArray(p.type)) lines.push(`- A line with the length of \`${p.name}\`, then a line with its ${word(elem(p.type))}s separated by spaces.`);
     else lines.push(`- A line with \`${p.name}\` (a ${word(p.type)}).`);
@@ -139,32 +154,32 @@ type Lang = { type: (t: ReturnType, param: boolean) => string; empty: (t: Return
 
 const LANGS: Record<RuntimeId, Lang> = {
   python: {
-    type: (t) => ({ int: 'int', long: 'int', double: 'float', bool: 'bool', string: 'str', 'int[]': 'list[int]', 'long[]': 'list[int]', 'double[]': 'list[float]', 'string[]': 'list[str]', 'int[][]': 'list[list[int]]', list: "'ListNode | None'" })[t],
+    type: (t) => ({ int: 'int', long: 'int', double: 'float', bool: 'bool', string: 'str', 'int[]': 'list[int]', 'long[]': 'list[int]', 'double[]': 'list[float]', 'string[]': 'list[str]', 'int[][]': 'list[list[int]]', list: "'ListNode | None'", tree: "'TreeNode | None'" })[t],
     empty: (t) => (t === 'list' ? 'None' : (({ int: '0', long: '0', double: '0.0', bool: 'False', string: "''" })[t as 'int'] ?? '[]')),
   },
   javascript: { type: () => '', empty: (t) => (t === 'list' ? 'null' : (({ int: '0', long: '0', double: '0', bool: 'false', string: "''" })[t as 'int'] ?? '[]')) },
   java: {
-    type: (t) => ({ int: 'int', long: 'long', double: 'double', bool: 'boolean', string: 'String', 'int[]': 'int[]', 'long[]': 'long[]', 'double[]': 'double[]', 'string[]': 'String[]', 'int[][]': 'int[][]', list: 'ListNode' })[t],
-    empty: (t) => ({ int: '0', long: '0L', double: '0.0', bool: 'false', string: '""', 'int[]': 'new int[0]', 'long[]': 'new long[0]', 'double[]': 'new double[0]', 'string[]': 'new String[0]', 'int[][]': 'new int[0][0]', list: 'null' })[t],
+    type: (t) => ({ int: 'int', long: 'long', double: 'double', bool: 'boolean', string: 'String', 'int[]': 'int[]', 'long[]': 'long[]', 'double[]': 'double[]', 'string[]': 'String[]', 'int[][]': 'int[][]', list: 'ListNode', tree: 'TreeNode' })[t],
+    empty: (t) => ({ int: '0', long: '0L', double: '0.0', bool: 'false', string: '""', 'int[]': 'new int[0]', 'long[]': 'new long[0]', 'double[]': 'new double[0]', 'string[]': 'new String[0]', 'int[][]': 'new int[0][0]', list: 'null', tree: 'null' })[t],
   },
   csharp: {
-    type: (t) => ({ int: 'int', long: 'long', double: 'double', bool: 'bool', string: 'string', 'int[]': 'int[]', 'long[]': 'long[]', 'double[]': 'double[]', 'string[]': 'string[]', 'int[][]': 'int[][]', list: 'ListNode' })[t],
-    empty: (t) => ({ int: '0', long: '0', double: '0.0', bool: 'false', string: '""', 'int[]': 'new int[0]', 'long[]': 'new long[0]', 'double[]': 'new double[0]', 'string[]': 'new string[0]', 'int[][]': 'new int[0][]', list: 'null' })[t],
+    type: (t) => ({ int: 'int', long: 'long', double: 'double', bool: 'bool', string: 'string', 'int[]': 'int[]', 'long[]': 'long[]', 'double[]': 'double[]', 'string[]': 'string[]', 'int[][]': 'int[][]', list: 'ListNode', tree: 'TreeNode' })[t],
+    empty: (t) => ({ int: '0', long: '0', double: '0.0', bool: 'false', string: '""', 'int[]': 'new int[0]', 'long[]': 'new long[0]', 'double[]': 'new double[0]', 'string[]': 'new string[0]', 'int[][]': 'new int[0][]', list: 'null', tree: 'null' })[t],
   },
   go: {
-    type: (t) => ({ int: 'int', long: 'int64', double: 'float64', bool: 'bool', string: 'string', 'int[]': '[]int', 'long[]': '[]int64', 'double[]': '[]float64', 'string[]': '[]string', 'int[][]': '[][]int', list: '*ListNode' })[t],
+    type: (t) => ({ int: 'int', long: 'int64', double: 'float64', bool: 'bool', string: 'string', 'int[]': '[]int', 'long[]': '[]int64', 'double[]': '[]float64', 'string[]': '[]string', 'int[][]': '[][]int', list: '*ListNode', tree: '*TreeNode' })[t],
     empty: (t) => ({ int: '0', long: '0', double: '0', bool: 'false', string: '""' })[t as 'int'] ?? 'nil',
   },
   rust: {
     type: (t, param) =>
       param
-        ? { int: 'i32', long: 'i64', double: 'f64', bool: 'bool', string: '&str', 'int[]': '&[i32]', 'long[]': '&[i64]', 'double[]': '&[f64]', 'string[]': '&[String]', 'int[][]': '&[Vec<i32>]', list: 'Option<Box<ListNode>>' }[t]
-        : { int: 'i32', long: 'i64', double: 'f64', bool: 'bool', string: 'String', 'int[]': 'Vec<i32>', 'long[]': 'Vec<i64>', 'double[]': 'Vec<f64>', 'string[]': 'Vec<String>', 'int[][]': 'Vec<Vec<i32>>', list: 'Option<Box<ListNode>>' }[t],
+        ? { int: 'i32', long: 'i64', double: 'f64', bool: 'bool', string: '&str', 'int[]': '&[i32]', 'long[]': '&[i64]', 'double[]': '&[f64]', 'string[]': '&[String]', 'int[][]': '&[Vec<i32>]', list: 'Option<Box<ListNode>>', tree: 'Option<Box<TreeNode>>' }[t]
+        : { int: 'i32', long: 'i64', double: 'f64', bool: 'bool', string: 'String', 'int[]': 'Vec<i32>', 'long[]': 'Vec<i64>', 'double[]': 'Vec<f64>', 'string[]': 'Vec<String>', 'int[][]': 'Vec<Vec<i32>>', list: 'Option<Box<ListNode>>', tree: 'Option<Box<TreeNode>>' }[t],
     empty: (t) => (t === 'list' ? 'None' : (({ int: '0', long: '0', double: '0.0', bool: 'false', string: 'String::new()' })[t as 'int'] ?? 'vec![]')),
   },
   cpp: {
     type: (t, param) => {
-      const base = { int: 'int', long: 'long long', double: 'double', bool: 'bool', string: 'string', 'int[]': 'vector<int>', 'long[]': 'vector<long long>', 'double[]': 'vector<double>', 'string[]': 'vector<string>', 'int[][]': 'vector<vector<int>>', list: 'ListNode*' }[t];
+      const base = { int: 'int', long: 'long long', double: 'double', bool: 'bool', string: 'string', 'int[]': 'vector<int>', 'long[]': 'vector<long long>', 'double[]': 'vector<double>', 'string[]': 'vector<string>', 'int[][]': 'vector<vector<int>>', list: 'ListNode*', tree: 'TreeNode*' }[t];
       return param && (t === 'string' || t.includes('[]')) ? `const ${base}&` : base;
     },
     empty: (t) => (t === 'list' ? 'nullptr' : (({ int: '0', long: '0', double: '0.0', bool: 'false', string: '""' })[t as 'int'] ?? '{}')),
@@ -178,13 +193,14 @@ function cSignature(fn: string, params: readonly Param[], ret: ReturnType): stri
   for (const p of params) {
     const n = snake(p.name);
     if (p.type === 'list') ps.push(`struct ListNode *${n}`);
+    else if (p.type === 'tree') ps.push(`struct TreeNode *${n}`);
     else if (p.type === 'int[][]') ps.push(`int **${n}, int ${n}_rows, int ${n}_cols`);
     else if (isArray(p.type)) ps.push(`${{ int: 'const int', long: 'const long long', double: 'const double', string: 'char' }[elem(p.type)]} *${elem(p.type) === 'string' ? '*' : ''}${n}, int ${n}_size`);
     else ps.push(`${{ int: 'int', long: 'long long', double: 'double', string: 'const char' }[p.type as 'int']} ${p.type === 'string' ? '*' : ''}${n}`);
   }
   if (ret === 'int[][]') ps.push('int *return_rows', 'int *return_cols');
   else if (isArray(ret)) ps.push('int *return_size');
-  const r = { int: 'int', long: 'long long', double: 'double', bool: 'bool', string: 'char *', 'int[]': 'int *', 'long[]': 'long long *', 'double[]': 'double *', 'string[]': 'char **', 'int[][]': 'int **', list: 'struct ListNode *' }[ret];
+  const r = { int: 'int', long: 'long long', double: 'double', bool: 'bool', string: 'char *', 'int[]': 'int *', 'long[]': 'long long *', 'double[]': 'double *', 'string[]': 'char **', 'int[][]': 'int **', list: 'struct ListNode *', tree: 'struct TreeNode *' }[ret];
   return `${r}${r.endsWith('*') ? '' : ' '}${snake(fn)}(${ps.join(', ')})`;
 }
 function cEmpty(ret: ReturnType): string {
@@ -232,6 +248,19 @@ const NODE: Partial<Record<RuntimeId, string>> = {
   cpp: '// Provided: singly linked list node. Do not change.\nstruct ListNode {\n    int val;\n    ListNode *next;\n    ListNode(int x = 0, ListNode *n = nullptr) : val(x), next(n) {}\n};',
   c: '/* Provided: singly linked list node. Do not change. */\nstruct ListNode {\n    int val;\n    struct ListNode *next;\n};',
 };
+const TREE: Partial<Record<RuntimeId, string>> = {
+  python: '# Provided: binary tree node. Do not change.\nclass TreeNode:\n    def __init__(self, val=0, left=None, right=None):\n        self.val = val\n        self.left = left\n        self.right = right',
+  javascript: '// Provided: binary tree node. Do not change.\nclass TreeNode {\n  constructor(val = 0, left = null, right = null) {\n    this.val = val;\n    this.left = left;\n    this.right = right;\n  }\n}',
+  rust: '// Provided: binary tree node. Do not change.\n#[derive(PartialEq, Eq, Clone, Debug)]\npub struct TreeNode {\n    pub val: i32,\n    pub left: Option<Box<TreeNode>>,\n    pub right: Option<Box<TreeNode>>,\n}',
+  cpp: '// Provided: binary tree node. Do not change.\nstruct TreeNode {\n    int val;\n    TreeNode *left;\n    TreeNode *right;\n    TreeNode(int x = 0) : val(x), left(nullptr), right(nullptr) {}\n};',
+  c: '/* Provided: binary tree node. Do not change. */\nstruct TreeNode {\n    int val;\n    struct TreeNode *left;\n    struct TreeNode *right;\n};',
+};
+const TREE_NOTE: Partial<Record<RuntimeId, string>> = {
+  java: '// Provided by the platform (do not declare it again):\n// class TreeNode { int val; TreeNode left; TreeNode right; TreeNode(int val) {...} }',
+  csharp: '// Provided by the platform (do not declare it again):\n// public class TreeNode { public int val; public TreeNode left; public TreeNode right; public TreeNode(int val = 0) {...} }',
+  go: '// Provided by the platform (do not declare it again):\n// type TreeNode struct {\n//     Val   int\n//     Left  *TreeNode\n//     Right *TreeNode\n// }',
+};
+
 /** Languages with a separate driver file declare the node there; the student sees it as a comment. */
 const NODE_NOTE: Partial<Record<RuntimeId, string>> = {
   java: '// Provided by the platform (do not declare it again):\n// class ListNode { int val; ListNode next; ListNode(int val) {...} ListNode(int val, ListNode next) {...} }',
@@ -244,8 +273,11 @@ export function studentFile(lang: RuntimeId, fn: string, params: readonly Param[
   const sig = signature(lang, fn, params, ret);
   const h = sol.helpers?.replace(/\s+$/, '');
   const list = usesList(params, ret);
-  const node = list && NODE[lang] ? `${NODE[lang]}\n\n${lang === 'python' ? '\n' : ''}` : '';
-  const note = list && NODE_NOTE[lang] ? `${NODE_NOTE[lang]}\n\n` : '';
+  const tree = usesTree(params);
+  const defs = [list && NODE[lang], tree && TREE[lang]].filter(Boolean).join(lang === 'python' ? '\n\n\n' : '\n\n');
+  const notes = [list && NODE_NOTE[lang], tree && TREE_NOTE[lang]].filter(Boolean).join('\n');
+  const node = defs ? `${defs}\n\n${lang === 'python' ? '\n' : ''}` : '';
+  const note = notes ? `${notes}\n\n` : '';
   switch (lang) {
     case 'python':
       return `${node}${h ? `${h}\n\n\n` : ''}${sig}\n${indent(sol.body, 4)}\n`;
@@ -299,6 +331,7 @@ function pyDriver(fn: string, params: readonly Param[], ret: ReturnType): string
   const conv = (t: string) => (t === 'int' || t === 'long' ? 'int' : t === 'double' ? 'float' : 'bytes.decode');
   const reads = params.map((p, i) => {
     const v = `_a${i}`;
+    if (p.type === 'tree') return `    _n = int(_t[_p])\n    _p += 1\n    ${v} = _to_tree([None if x == b"null" else int(x) for x in _t[_p:_p + _n]])\n    _p += _n`;
     if (p.type === 'list') return `    _n = int(_t[_p])\n    _p += 1\n    ${v} = _to_list(list(map(int, _t[_p:_p + _n])))\n    _p += _n`;
     if (p.type === 'int[][]') return `    _r, _c = int(_t[_p]), int(_t[_p + 1])\n    _p += 2\n    ${v} = [list(map(int, _t[_p + i * _c:_p + (i + 1) * _c])) for i in range(_r)]\n    _p += _r * _c`;
     if (isArray(p.type)) return `    _n = int(_t[_p])\n    _p += 1\n    ${v} = list(map(${conv(elem(p.type))}, _t[_p:_p + _n]))\n    _p += _n`;
@@ -322,13 +355,17 @@ function pyDriver(fn: string, params: readonly Param[], ret: ReturnType): string
   const helpers = usesList(params, ret)
     ? '\n\ndef _to_list(a):\n    head = None\n    for v in reversed(a):\n        head = ListNode(v, head)\n    return head\n\n\ndef _from_list(h):\n    out = []\n    while h is not None:\n        out.append(h.val)\n        h = h.next\n    return out\n'
     : '';
-  return `\nimport sys\n${helpers}\n\ndef _main():\n    _t = sys.stdin.buffer.read().split()\n    _p = 0\n${reads.join('\n')}\n    _res = ${call}\n${out}\n\n\n_main()\n`;
+  const treeHelpers = usesTree(params)
+    ? '\n\ndef _to_tree(vals):\n    nodes = [None if v is None else TreeNode(v) for v in vals]\n    j = 1\n    for node in nodes:\n        if node is None:\n            continue\n        if j < len(nodes):\n            node.left = nodes[j]\n        j += 1\n        if j < len(nodes):\n            node.right = nodes[j]\n        j += 1\n    return nodes[0] if nodes else None\n'
+    : '';
+  return `\nimport sys\n${helpers}${treeHelpers}\n\ndef _main():\n    _t = sys.stdin.buffer.read().split()\n    _p = 0\n${reads.join('\n')}\n    _res = ${call}\n${out}\n\n\n_main()\n`;
 }
 
 function jsDriver(fn: string, params: readonly Param[], ret: ReturnType): string {
   const conv = (t: string) => (t === 'string' ? '' : '.map(Number)');
   const reads = params.map((p, i) => {
     const v = `__a${i}`;
+    if (p.type === 'tree') return `const ${v} = (() => { const n = Number(__t[__p++]); const nodes = __t.slice(__p, __p + n).map((x) => (x === 'null' ? null : new TreeNode(Number(x)))); __p += n; let j = 1; for (const x of nodes) { if (!x) continue; if (j < n) x.left = nodes[j]; j++; if (j < n) x.right = nodes[j]; j++; } return n ? nodes[0] : null; })();`;
     if (p.type === 'list') return `const ${v} = (() => { const n = Number(__t[__p++]); let h = null; for (let i = __p + n - 1; i >= __p; i--) h = new ListNode(Number(__t[i]), h); __p += n; return h; })();`;
     if (p.type === 'int[][]') return `const ${v} = (() => { const r = Number(__t[__p++]); const c = Number(__t[__p++]); const g = []; for (let i = 0; i < r; i++) { g.push(__t.slice(__p, __p + c).map(Number)); __p += c; } return g; })();`;
     if (isArray(p.type)) return `const ${v} = (() => { const n = Number(__t[__p++]); const a = __t.slice(__p, __p + n)${conv(elem(p.type))}; __p += n; return a; })();`;
@@ -356,6 +393,7 @@ function javaDriver(fn: string, params: readonly Param[], ret: ReturnType): stri
   const jt = (t: string) => ({ int: 'int', long: 'long', double: 'double', string: 'String' })[t]!;
   const reads = params.map((p, i) => {
     const v = `a${i}`;
+    if (p.type === 'tree') return `        int n${i} = Integer.parseInt(next());\n        TreeNode[] t${i} = new TreeNode[n${i}];\n        for (int i = 0; i < n${i}; i++) { String s = next(); t${i}[i] = s.equals("null") ? null : new TreeNode(Integer.parseInt(s)); }\n        TreeNode ${v} = buildTree(t${i});`;
     if (p.type === 'list') return `        int n${i} = Integer.parseInt(next());\n        int[] l${i} = new int[n${i}];\n        for (int i = 0; i < n${i}; i++) l${i}[i] = Integer.parseInt(next());\n        ListNode ${v} = toList(l${i});`;
     if (p.type === 'int[][]') return `        int r${i} = Integer.parseInt(next()), c${i} = Integer.parseInt(next());\n        int[][] ${v} = new int[r${i}][c${i}];\n        for (int i = 0; i < r${i}; i++) for (int j = 0; j < c${i}; j++) ${v}[i][j] = Integer.parseInt(next());`;
     if (isArray(p.type)) return `        int n${i} = Integer.parseInt(next());\n        ${jt(elem(p.type))}[] ${v} = new ${jt(elem(p.type))}[n${i}];\n        for (int i = 0; i < n${i}; i++) ${v}[i] = ${parse(elem(p.type), 'next()')};`;
@@ -395,8 +433,8 @@ ${out}
         ps.print(sb);
         ps.flush();
     }
-${usesList(params, ret) ? JAVA_LIST : ''}}
-${usesList(params, ret) ? JAVA_NODE : ''}`;
+${usesList(params, ret) ? JAVA_LIST : ''}${usesTree(params) ? JAVA_TREE : ''}}
+${usesList(params, ret) ? JAVA_NODE : ''}${usesTree(params) ? JAVA_TREE_NODE : ''}`;
 }
 
 const JAVA_LIST = `
@@ -430,11 +468,37 @@ class ListNode {
 }
 `;
 
+const JAVA_TREE = `
+    private static TreeNode buildTree(TreeNode[] nodes) {
+        int j = 1;
+        for (TreeNode x : nodes) {
+            if (x == null) continue;
+            if (j < nodes.length) x.left = nodes[j];
+            j++;
+            if (j < nodes.length) x.right = nodes[j];
+            j++;
+        }
+        return nodes.length == 0 ? null : nodes[0];
+    }
+`;
+const JAVA_TREE_NODE = `
+class TreeNode {
+    int val;
+    TreeNode left;
+    TreeNode right;
+
+    TreeNode() {}
+
+    TreeNode(int val) { this.val = val; }
+}
+`;
+
 function csDriver(fn: string, params: readonly Param[], ret: ReturnType): string {
   const parse = (t: string, x: string) => ({ int: `int.Parse(${x})`, long: `long.Parse(${x})`, double: `double.Parse(${x}, CultureInfo.InvariantCulture)`, string: x })[t]!;
   const ct = (t: string) => ({ int: 'int', long: 'long', double: 'double', string: 'string' })[t]!;
   const reads = params.map((p, i) => {
     const v = `a${i}`;
+    if (p.type === 'tree') return `        int n${i} = int.Parse(t[p++]);\n        var t${i} = new TreeNode[n${i}];\n        for (int i = 0; i < n${i}; i++) { var s = t[p++]; t${i}[i] = s == "null" ? null : new TreeNode(int.Parse(s)); }\n        for (int i = 0, j = 1; i < n${i}; i++) { if (t${i}[i] == null) continue; if (j < n${i}) t${i}[i].left = t${i}[j]; j++; if (j < n${i}) t${i}[i].right = t${i}[j]; j++; }\n        TreeNode ${v} = n${i} == 0 ? null : t${i}[0];`;
     if (p.type === 'list') return `        int n${i} = int.Parse(t[p++]);\n        ListNode ${v} = null;\n        for (int i = p + n${i} - 1; i >= p; i--) ${v} = new ListNode(int.Parse(t[i]), ${v});\n        p += n${i};`;
     if (p.type === 'int[][]') return `        int r${i} = int.Parse(t[p++]), c${i} = int.Parse(t[p++]);\n        var ${v} = new int[r${i}][];\n        for (int i = 0; i < r${i}; i++) { ${v}[i] = new int[c${i}]; for (int j = 0; j < c${i}; j++) ${v}[i][j] = int.Parse(t[p++]); }`;
     if (isArray(p.type)) return `        int n${i} = int.Parse(t[p++]);\n        var ${v} = new ${ct(elem(p.type))}[n${i}];\n        for (int i = 0; i < n${i}; i++) ${v}[i] = ${parse(elem(p.type), 't[p++]')};`;
@@ -467,7 +531,7 @@ ${out}
         Console.Out.Flush();
     }
 }
-${usesList(params, ret) ? '\npublic class ListNode\n{\n    public int val;\n    public ListNode next;\n\n    public ListNode(int val = 0, ListNode next = null)\n    {\n        this.val = val;\n        this.next = next;\n    }\n}\n' : ''}`;
+${usesTree(params) ? '\npublic class TreeNode\n{\n    public int val;\n    public TreeNode left;\n    public TreeNode right;\n\n    public TreeNode(int val = 0)\n    {\n        this.val = val;\n    }\n}\n' : ''}${usesList(params, ret) ? '\npublic class ListNode\n{\n    public int val;\n    public ListNode next;\n\n    public ListNode(int val = 0, ListNode next = null)\n    {\n        this.val = val;\n        this.next = next;\n    }\n}\n' : ''}`;
 }
 
 function goDriver(fn: string, params: readonly Param[], ret: ReturnType): string {
@@ -475,6 +539,7 @@ function goDriver(fn: string, params: readonly Param[], ret: ReturnType): string
   const gt = (t: string) => ({ int: 'int', long: 'int64', double: 'float64', string: 'string' })[t]!;
   const reads = params.map((p, i) => {
     const v = `a${i}`;
+    if (p.type === 'tree') return `\tn${i} := atoi(next())\n\tt${i} := make([]*TreeNode, n${i})\n\tfor i := range t${i} {\n\t\tif s := next(); s != "null" {\n\t\t\tt${i}[i] = &TreeNode{Val: atoi(s)}\n\t\t}\n\t}\n\tfor i, j := 0, 1; i < n${i}; i++ {\n\t\tif t${i}[i] == nil {\n\t\t\tcontinue\n\t\t}\n\t\tif j < n${i} {\n\t\t\tt${i}[i].Left = t${i}[j]\n\t\t}\n\t\tj++\n\t\tif j < n${i} {\n\t\t\tt${i}[i].Right = t${i}[j]\n\t\t}\n\t\tj++\n\t}\n\tvar ${v} *TreeNode\n\tif n${i} > 0 {\n\t\t${v} = t${i}[0]\n\t}`;
     if (p.type === 'list') return `\tn${i} := atoi(next())\n\tl${i} := make([]int, n${i})\n\tfor i := range l${i} {\n\t\tl${i}[i] = atoi(next())\n\t}\n\tvar ${v} *ListNode\n\tfor i := n${i} - 1; i >= 0; i-- {\n\t\t${v} = &ListNode{Val: l${i}[i], Next: ${v}}\n\t}`;
     if (p.type === 'int[][]') return `\tr${i}, c${i} := atoi(next()), atoi(next())\n\t${v} := make([][]int, r${i})\n\tfor i := range ${v} {\n\t\t${v}[i] = make([]int, c${i})\n\t\tfor j := range ${v}[i] {\n\t\t\t${v}[i][j] = atoi(next())\n\t\t}\n\t}`;
     if (isArray(p.type)) return `\tn${i} := atoi(next())\n\t${v} := make([]${gt(elem(p.type))}, n${i})\n\tfor i := range ${v} {\n\t\t${v}[i] = ${parse(elem(p.type))}\n\t}`;
@@ -516,13 +581,14 @@ ${reads.join('\n')}
 \tdefer w.Flush()
 ${out}
 }
-${usesList(params, ret) ? '\ntype ListNode struct {\n\tVal  int\n\tNext *ListNode\n}\n' : ''}`;
+${usesList(params, ret) ? '\ntype ListNode struct {\n\tVal  int\n\tNext *ListNode\n}\n' : ''}${usesTree(params) ? '\ntype TreeNode struct {\n\tVal   int\n\tLeft  *TreeNode\n\tRight *TreeNode\n}\n' : ''}`;
 }
 
 function rustDriver(fn: string, params: readonly Param[], ret: ReturnType): string {
   const rt = (t: string) => ({ int: 'i32', long: 'i64', double: 'f64' })[t]!;
   const reads = params.map((p, i) => {
     const v = `a${i}`;
+    if (p.type === 'tree') return `    let n${i}: usize = it.next().unwrap().parse().unwrap();\n    let t${i}: Vec<Option<i32>> = (0..n${i}).map(|_| { let s = it.next().unwrap(); if s == "null" { None } else { Some(s.parse().unwrap()) } }).collect();\n    let ${v} = hbe_tree(&t${i});`;
     if (p.type === 'list') return `    let n${i}: usize = it.next().unwrap().parse().unwrap();\n    let l${i}: Vec<i32> = (0..n${i}).map(|_| it.next().unwrap().parse().unwrap()).collect();\n    let mut ${v}: Option<Box<ListNode>> = None;\n    for &x in l${i}.iter().rev() {\n        ${v} = Some(Box::new(ListNode { val: x, next: ${v} }));\n    }`;
     if (p.type === 'int[][]') return `    let r${i}: usize = it.next().unwrap().parse().unwrap();\n    let c${i}: usize = it.next().unwrap().parse().unwrap();\n    let ${v}: Vec<Vec<i32>> = (0..r${i}).map(|_| (0..c${i}).map(|_| it.next().unwrap().parse().unwrap()).collect()).collect();`;
     if (isArray(p.type)) {
@@ -543,7 +609,37 @@ function rustDriver(fn: string, params: readonly Param[], ret: ReturnType): stri
       : isArray(ret)
         ? `    let line: Vec<String> = res.iter().map(|x| format!("${fmtOne(elem(ret))}", x)).collect();\n    writeln!(o, "{}", line.join(" ")).unwrap();`
         : `    writeln!(o, "${fmtOne(ret)}", res).unwrap();`;
-  return `
+  const treeHelper = usesTree(params)
+    ? `
+fn hbe_tree(t: &[Option<i32>]) -> Option<Box<TreeNode>> {
+    let n = t.len();
+    let (mut lc, mut rc) = (vec![usize::MAX; n], vec![usize::MAX; n]);
+    let mut j = 1;
+    for i in 0..n {
+        if t[i].is_none() {
+            continue;
+        }
+        if j < n {
+            lc[i] = j;
+        }
+        j += 1;
+        if j < n {
+            rc[i] = j;
+        }
+        j += 1;
+    }
+    fn build(i: usize, t: &[Option<i32>], lc: &[usize], rc: &[usize]) -> Option<Box<TreeNode>> {
+        if i >= t.len() {
+            return None;
+        }
+        let val = t[i]?;
+        Some(Box::new(TreeNode { val, left: build(lc[i], t, lc, rc), right: build(rc[i], t, lc, rc) }))
+    }
+    if n == 0 { None } else { build(0, t, &lc, &rc) }
+}
+`
+    : '';
+  return `${treeHelper}
 fn main() {
     use std::io::{Read, Write};
     let mut input = String::new();
@@ -562,6 +658,7 @@ function cppDriver(fn: string, params: readonly Param[], ret: ReturnType): strin
   const ct = (t: string) => ({ int: 'int', long: 'long long', double: 'double', string: 'string' })[t]!;
   const reads = params.map((p, i) => {
     const v = `a${i}`;
+    if (p.type === 'tree') return `    int n${i};\n    cin >> n${i};\n    vector<TreeNode*> t${i}(n${i}, nullptr);\n    for (int i = 0; i < n${i}; i++) { string s; cin >> s; if (s != "null") t${i}[i] = new TreeNode(stoi(s)); }\n    for (int i = 0, j = 1; i < n${i}; i++) { if (!t${i}[i]) continue; if (j < n${i}) t${i}[i]->left = t${i}[j]; j++; if (j < n${i}) t${i}[i]->right = t${i}[j]; j++; }\n    TreeNode *${v} = n${i} ? t${i}[0] : nullptr;`;
     if (p.type === 'list') return `    int n${i};\n    cin >> n${i};\n    vector<int> l${i}(n${i});\n    for (auto& x : l${i}) cin >> x;\n    ListNode *${v} = nullptr;\n    for (int i = n${i} - 1; i >= 0; i--) ${v} = new ListNode(l${i}[i], ${v});`;
     if (p.type === 'int[][]') return `    int r${i}, c${i};\n    cin >> r${i} >> c${i};\n    vector<vector<int>> ${v}(r${i}, vector<int>(c${i}));\n    for (auto& row : ${v}) for (auto& x : row) cin >> x;`;
     if (isArray(p.type)) return `    int n${i};\n    cin >> n${i};\n    vector<${ct(elem(p.type))}> ${v}(n${i});\n    for (auto& x : ${v}) cin >> x;`;
@@ -597,6 +694,10 @@ function cDriver(fn: string, params: readonly Param[], ret: ReturnType): string 
   const args: string[] = [];
   const reads = params.map((p, i) => {
     const v = `a${i}`;
+    if (p.type === 'tree') {
+      args.push(v);
+      return `    int n${i} = atoi(hbe_next());\n    struct TreeNode **t${i} = calloc((size_t)(n${i} > 0 ? n${i} : 1), sizeof(struct TreeNode *));\n    for (int i = 0; i < n${i}; i++) { char *s = hbe_next(); if (strcmp(s, "null") != 0) { t${i}[i] = calloc(1, sizeof(struct TreeNode)); t${i}[i]->val = atoi(s); } }\n    for (int i = 0, j = 1; i < n${i}; i++) { if (!t${i}[i]) continue; if (j < n${i}) t${i}[i]->left = t${i}[j]; j++; if (j < n${i}) t${i}[i]->right = t${i}[j]; j++; }\n    struct TreeNode *${v} = n${i} ? t${i}[0] : NULL;`;
+    }
     if (p.type === 'list') {
       args.push(v);
       return `    int n${i} = atoi(hbe_next());\n    int *l${i} = malloc(sizeof(int) * (size_t)(n${i} > 0 ? n${i} : 1));\n    for (int i = 0; i < n${i}; i++) l${i}[i] = atoi(hbe_next());\n    struct ListNode *${v} = NULL;\n    for (int i = n${i} - 1; i >= 0; i--) { struct ListNode *x = malloc(sizeof *x); x->val = l${i}[i]; x->next = ${v}; ${v} = x; }`;
