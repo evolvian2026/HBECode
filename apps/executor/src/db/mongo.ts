@@ -21,11 +21,13 @@ export class MongoRunner {
 
   async run(opts: { setup: string; code: string; timeLimitMs: number; ignoreId: boolean }): Promise<SqlOutcome> {
     const t0 = Date.now();
+    // Reported time covers the student's statement only, not building the dataset.
+    let tq = t0;
     let query;
     try {
       query = parseMongoQuery(opts.code);
     } catch (e) {
-      if (e instanceof MongoQueryError) return { ok: false, error: e.message, wallMs: Date.now() - t0 };
+      if (e instanceof MongoQueryError) return { ok: false, error: e.message, wallMs: Date.now() - tq };
       throw e;
     }
     const id = randomBytes(8).toString('hex');
@@ -45,7 +47,7 @@ export class MongoRunner {
           else await db.createCollection(coll);
         }
       } catch (e) {
-        return { ok: false, error: `dataset setup failed: ${(e as Error).message}`, wallMs: Date.now() - t0 };
+        return { ok: false, error: `dataset setup failed: ${(e as Error).message}`, wallMs: Date.now() - tq };
       }
       await db.command({ createUser: user, pwd: password, roles: [{ role: 'read', db: dbName }] });
       const u = new URL(this.url);
@@ -56,6 +58,7 @@ export class MongoRunner {
       student = new MongoClient(u.toString(), { maxPoolSize: 1, serverSelectionTimeoutMS: 5000 });
       await student.connect();
       const coll = student.db(dbName).collection(query.collection);
+      tq = Date.now();
       let docs: Record<string, unknown>[];
       if (query.pipeline) {
         docs = await coll.aggregate([...query.pipeline, { $limit: DOC_CAP + 1 }], { maxTimeMS: opts.timeLimitMs, allowDiskUse: false }).toArray();
@@ -69,11 +72,11 @@ export class MongoRunner {
       }
       const plain = docs.slice(0, DOC_CAP).map((d) => EJSON.serialize(d, { relaxed: true }) as Record<string, unknown>);
       const result: ResultSet = { ...documentsToResult(plain, opts.ignoreId), truncated: docs.length > DOC_CAP };
-      return { ok: true, result, wallMs: Date.now() - t0 };
+      return { ok: true, result, wallMs: Date.now() - tq };
     } catch (e) {
       const msg = (e as Error).message;
       const timedOut = /exceeded time limit|MaxTimeMSExpired|operation exceeded/i.test(msg);
-      return { ok: false, error: timedOut ? 'time limit exceeded' : msg, timedOut, wallMs: Date.now() - t0 };
+      return { ok: false, error: timedOut ? 'time limit exceeded' : msg, timedOut, wallMs: Date.now() - tq };
     } finally {
       await student?.close().catch(() => undefined);
       await db.command({ dropUser: user }).catch(() => undefined);

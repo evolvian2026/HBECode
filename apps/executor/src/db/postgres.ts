@@ -4,7 +4,9 @@ import pg from 'pg';
 
 /**
  * PostgreSQL runner. The runner server holds only throwaway question data. Per dataset:
- *  - a template database is built once from the setup script (cached by content hash);
+ *  - a template database is built once from the setup script (cached by content hash); only the
+ *    `maxTemplates` most recently used are kept, because every database costs ~7.5 MB of the
+ *    runner's memory (its data directory is on tmpfs) and 60 SQL questions have 600 datasets;
  *  - each run gets `CREATE DATABASE run_x TEMPLATE tpl_y` and is dropped afterwards;
  *  - student SQL runs as `hbe_sbx` (no superuser, no CREATE, no file/program access);
  *  - query mode: exactly one statement (extended protocol), READ ONLY transaction, row cap;
@@ -28,8 +30,15 @@ export class PostgresRunner {
   private sbxPassword = randomBytes(18).toString('base64url');
   private ready: Promise<void> | null = null;
   private building = new Map<string, Promise<string>>();
+  /** Built templates, least recently used first (a Set iterates in insertion order). */
+  private lru = new Set<string>();
+  /** Templates currently being copied by CREATE DATABASE … TEMPLATE (must not be dropped). */
+  private copying = new Map<string, number>();
 
-  constructor(private readonly url: string) {
+  constructor(
+    private readonly url: string,
+    private readonly maxTemplates = 16,
+  ) {
     this.admin = new pg.Pool({ connectionString: url, max: 4 });
   }
 
@@ -56,6 +65,9 @@ export class PostgresRunner {
         await c.query(`ALTER ROLE ${SBX} SET idle_in_transaction_session_timeout = '10s'`);
         await c.query(`ALTER ROLE ${SBX} SET work_mem = '16MB'`);
         await c.query(`ALTER ROLE ${SBX} SET temp_file_limit = '64MB'`);
+        // JIT compilation costs seconds on tiny datasets whose plans look expensive (recursive
+        // CTEs over unanalysed tables), turning a 1 ms query into a time-limit failure.
+        await c.query(`ALTER ROLE ${SBX} SET jit = off`);
         // Nothing but the run databases is reachable for the sandbox role.
         await c.query(`REVOKE CONNECT, TEMPORARY ON DATABASE postgres FROM PUBLIC`);
         await c.query(`REVOKE CONNECT, TEMPORARY ON DATABASE template1 FROM PUBLIC`);
@@ -104,18 +116,58 @@ export class PostgresRunner {
     return p;
   }
 
+  private async copyTemplate(tpl: string, db: string): Promise<void> {
+    this.lru.delete(tpl);
+    this.lru.add(tpl);
+    this.copying.set(tpl, (this.copying.get(tpl) ?? 0) + 1);
+    try {
+      await this.admin.query(`CREATE DATABASE ${ident(db)} TEMPLATE ${ident(tpl)}`);
+    } finally {
+      const n = (this.copying.get(tpl) ?? 1) - 1;
+      if (n > 0) this.copying.set(tpl, n);
+      else this.copying.delete(tpl);
+    }
+    await this.evict();
+  }
+
+  private forget(tpl: string): void {
+    this.lru.delete(tpl);
+    this.building.delete(tpl);
+  }
+
+  /** Drop least recently used templates beyond the cap (never one being copied right now). */
+  private async evict(): Promise<void> {
+    for (const tpl of [...this.lru]) {
+      if (this.lru.size <= this.maxTemplates) break;
+      if (this.copying.has(tpl)) continue;
+      this.forget(tpl);
+      // Without FORCE: if someone is copying it right now the drop fails and we simply try later.
+      await this.admin.query(`DROP DATABASE IF EXISTS ${ident(tpl)}`).catch(() => this.lru.add(tpl));
+    }
+  }
+
   /** Validate a setup script by building its template (authoring-time errors surface here). */
   async run(opts: { setup: string; code: string; mode: 'query' | 'dml'; stateQuery?: string; timeLimitMs: number }): Promise<SqlOutcome> {
     await this.init();
     const t0 = Date.now();
+    // Reported time covers the student's statement only, not building the dataset.
+    let tq = t0;
     let tpl: string;
     try {
       tpl = await this.template(opts.setup);
     } catch (e) {
-      return { ok: false, error: `dataset setup failed: ${(e as Error).message}`, wallMs: Date.now() - t0 };
+      return { ok: false, error: `dataset setup failed: ${(e as Error).message}`, wallMs: Date.now() - tq };
     }
     const db = `run_${randomBytes(8).toString('hex')}`;
-    await this.admin.query(`CREATE DATABASE ${ident(db)} TEMPLATE ${ident(tpl)}`);
+    try {
+      await this.copyTemplate(tpl, db);
+    } catch (e) {
+      // Dropped by an eviction (ours or another executor's) between lookup and copy: rebuild once.
+      if (!/does not exist/.test((e as Error).message)) throw e;
+      this.forget(tpl);
+      tpl = await this.template(opts.setup);
+      await this.copyTemplate(tpl, db);
+    }
     const student = new pg.Client({ connectionString: this.urlFor(db, { name: SBX, password: this.sbxPassword }), statement_timeout: opts.timeLimitMs, query_timeout: opts.timeLimitMs + 1000, connectionTimeoutMillis: 5000 });
     try {
       // Database ACLs are not copied from the template: lock the new database down explicitly.
@@ -130,24 +182,25 @@ export class PostgresRunner {
       await student.connect();
       const pid = (await student.query<{ pid: number }>('SELECT pg_backend_pid() AS pid')).rows[0]!.pid;
       const killer = setTimeout(() => void this.admin.query('SELECT pg_terminate_backend($1)', [pid]).catch(() => undefined), opts.timeLimitMs + 500);
+      tq = Date.now();
       try {
         if (opts.mode === 'query') {
           await student.query('BEGIN TRANSACTION READ ONLY');
           // `rows` forces the extended protocol: exactly one statement, at most ROW_CAP+1 rows.
           const r = await student.query({ text: opts.code, rowMode: 'array', rows: ROW_CAP + 1 } as pg.QueryConfig & { rows: number });
           await student.query('ROLLBACK').catch(() => undefined);
-          return { ok: true, result: toResult(r), wallMs: Date.now() - t0 };
+          return { ok: true, result: toResult(r), wallMs: Date.now() - tq };
         }
         await student.query(opts.code); // DML: multiple statements allowed, own database only
         const state = await student.query({ text: opts.stateQuery!, rowMode: 'array', rows: ROW_CAP + 1 } as pg.QueryConfig & { rows: number });
-        return { ok: true, result: toResult(state), wallMs: Date.now() - t0 };
+        return { ok: true, result: toResult(state), wallMs: Date.now() - tq };
       } finally {
         clearTimeout(killer);
       }
     } catch (e) {
       const msg = (e as Error).message;
       const timedOut = /statement timeout|canceling statement|terminating connection|Query read timeout|Connection terminated/i.test(msg);
-      return { ok: false, error: timedOut ? 'time limit exceeded' : msg, timedOut, wallMs: Date.now() - t0 };
+      return { ok: false, error: timedOut ? 'time limit exceeded' : msg, timedOut, wallMs: Date.now() - tq };
     } finally {
       await student.end().catch(() => undefined);
       await this.admin.query(`DROP DATABASE IF EXISTS ${ident(db)} WITH (FORCE)`).catch(() => undefined);

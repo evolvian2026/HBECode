@@ -10,7 +10,7 @@ let my: MysqlRunner | null = null;
 let mongo: MongoRunner | null = null;
 
 export function dbRunners(cfg: ExecutorConfig) {
-  if (cfg.pgRunnerUrl) pg ??= new PostgresRunner(cfg.pgRunnerUrl);
+  if (cfg.pgRunnerUrl) pg ??= new PostgresRunner(cfg.pgRunnerUrl, cfg.pgTemplateCache);
   if (cfg.mysqlRunnerUrl) my ??= new MysqlRunner(cfg.mysqlRunnerUrl);
   if (cfg.mongoRunnerUrl) mongo ??= new MongoRunner(cfg.mongoRunnerUrl);
   return { pg, my, mongo };

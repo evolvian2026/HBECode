@@ -43,7 +43,7 @@ async function ip(name: string): Promise<string> {
 }
 
 async function startDbRunners(): Promise<string[]> {
-  for (const n of RUNNERS) await exec('docker', ['rm', '-f', n]).catch(() => undefined);
+  for (const n of RUNNERS) await exec('docker', ['rm', '-f', '-v', n]).catch(() => undefined);
   await exec('docker', ['run', '-d', '--rm', '--name', 'hbe-bank-pg', '-e', 'POSTGRES_USER=runner_admin', '-e', 'POSTGRES_PASSWORD=bank-pg-pw', RUNNER_IMAGES.pg]);
   await exec('docker', ['run', '-d', '--rm', '--name', 'hbe-bank-mysql', '-e', 'MYSQL_ROOT_PASSWORD=bank-my-pw', RUNNER_IMAGES.mysql, '--local-infile=0', '--secure-file-priv=NULL', '--skip-name-resolve', '--performance-schema=0', '--innodb-buffer-pool-size=64M']);
   await exec('docker', ['run', '-d', '--rm', '--name', 'hbe-bank-mongo', '-e', 'MONGO_INITDB_ROOT_USERNAME=root', '-e', 'MONGO_INITDB_ROOT_PASSWORD=bank-mongo-pw', RUNNER_IMAGES.mongo, '--noscripting', '--wiredTigerCacheSizeGB', '0.25']);
@@ -69,6 +69,8 @@ beforeAll(async () => {
     'run', '-d', '--rm', ...DOCKER_FLAGS, '--network', 'host',
     '-e', `EXECUTOR_API_URL=http://127.0.0.1:${PORT}`, '-e', `EXECUTOR_TOKEN=${EXECUTOR_TOKEN}`, '-e', 'EXECUTOR_ID=seed-bank', '-e', `EXECUTOR_SLOTS=${process.env.BANK_SLOTS ?? '3'}`,
     ...runnerEnv.flatMap((e) => ['-e', e]),
+    // A tiny cache (e.g. PG_TEMPLATE_CACHE=2) exercises template eviction on every SQL dataset.
+    ...(process.env.PG_TEMPLATE_CACHE ? ['-e', `PG_TEMPLATE_CACHE=${process.env.PG_TEMPLATE_CACHE}`] : []),
     IMAGE,
   ]);
   container = stdout.trim();
@@ -78,9 +80,9 @@ beforeAll(async () => {
 afterAll(async () => {
   if (container) {
     if (process.env.BANK_EXECUTOR_LOG) await exec('sh', ['-c', `docker logs ${container} > ${process.env.BANK_EXECUTOR_LOG} 2>&1`]).catch(() => undefined);
-    await exec('docker', ['rm', '-f', container]).catch(() => undefined);
+    await exec('docker', ['rm', '-f', '-v', container]).catch(() => undefined);
   }
-  if (needsDb) for (const n of RUNNERS) await exec('docker', ['rm', '-f', n]).catch(() => undefined);
+  if (needsDb) for (const n of RUNNERS) await exec('docker', ['rm', '-f', '-v', n]).catch(() => undefined);
   await t?.close();
 });
 

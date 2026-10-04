@@ -27,6 +27,8 @@ export class MysqlRunner {
 
   async run(opts: { setup: string; code: string; mode: 'query' | 'dml'; stateQuery?: string; timeLimitMs: number }): Promise<SqlOutcome> {
     const t0 = Date.now();
+    // Reported time covers the student's statement only, not building the dataset.
+    let tq = t0;
     const id = randomBytes(8).toString('hex');
     const db = `run_${id}`;
     const user = `r_${id}`;
@@ -40,7 +42,7 @@ export class MysqlRunner {
         try {
           await setupConn.query(opts.setup);
         } catch (e) {
-          return { ok: false, error: `dataset setup failed: ${(e as Error).message}`, wallMs: Date.now() - t0 };
+          return { ok: false, error: `dataset setup failed: ${(e as Error).message}`, wallMs: Date.now() - tq };
         }
         const privs = opts.mode === 'dml' ? 'SELECT, INSERT, UPDATE, DELETE' : 'SELECT';
         await setupConn.query(`CREATE USER '${user}'@'%' IDENTIFIED BY '${password}' WITH MAX_USER_CONNECTIONS 2 MAX_QUERIES_PER_HOUR 2000`);
@@ -55,6 +57,7 @@ export class MysqlRunner {
       // max_execution_time can interrupt a statement without an error (SLEEP() just returns 1),
       // so the deadline itself decides TLE, not only the error text.
       const started = Date.now();
+      tq = started;
       const deadline = () => {
         if (Date.now() - started >= opts.timeLimitMs) throw new Error('killed: time limit exceeded');
       };
@@ -66,18 +69,18 @@ export class MysqlRunner {
           const result = await this.capped(student, opts.code);
           deadline();
           await student.query('ROLLBACK').catch(() => undefined);
-          return { ok: true, result, wallMs: Date.now() - t0 };
+          return { ok: true, result, wallMs: Date.now() - tq };
         }
         await student.query(opts.code);
         deadline();
-        return { ok: true, result: await this.capped(student, opts.stateQuery!), wallMs: Date.now() - t0 };
+        return { ok: true, result: await this.capped(student, opts.stateQuery!), wallMs: Date.now() - tq };
       } finally {
         clearTimeout(killer);
       }
     } catch (e) {
       const msg = (e as Error).message;
       const timedOut = /max_execution_time|Query execution was interrupted|connection.*closed|lost connection|killed/i.test(msg);
-      return { ok: false, error: timedOut ? 'time limit exceeded' : msg, timedOut, wallMs: Date.now() - t0 };
+      return { ok: false, error: timedOut ? 'time limit exceeded' : msg, timedOut, wallMs: Date.now() - tq };
     } finally {
       // destroy(), not end(): the connection may already be killed or torn down by the row cap.
       student?.destroy();

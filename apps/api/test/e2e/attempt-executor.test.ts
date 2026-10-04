@@ -55,7 +55,7 @@ beforeAll(async () => {
   await waitFor(async () => ((await teacher.get(`/api/v1/questions/${questionId}`)).json().status === 'published' ? true : undefined), 240_000, 500);
 });
 afterAll(async () => {
-  if (container) await exec('docker', ['rm', '-f', container]).catch(() => undefined);
+  if (container) await exec('docker', ['rm', '-f', '-v', container]).catch(() => undefined);
   await t?.close();
 });
 

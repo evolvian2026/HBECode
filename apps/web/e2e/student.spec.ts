@@ -33,6 +33,7 @@ test('student solves a problem: run samples, custom input, submit hidden tests',
   const problems = guard(page);
   await login(page, STUDENT.email, STUDENT.password);
   await expect(page).toHaveURL(/\/practice\/$/);
+  await page.getByLabel('Search').fill('Sum of an Array');
   await page.getByRole('link', { name: /Sum of an Array/ }).click();
   await expect(page.getByRole('heading', { name: 'Example 1' })).toBeVisible();
   await page.getByLabel('Language').selectOption('python');
@@ -71,6 +72,7 @@ test('student solves a problem: run samples, custom input, submit hidden tests',
 test('compile errors point at the student file and never show the driver', async ({ page }) => {
   const problems = guard(page);
   await login(page, STUDENT.email, STUDENT.password);
+  await page.getByLabel('Search').fill('Sum of an Array');
   await page.getByRole('link', { name: /Sum of an Array/ }).click();
   await page.getByLabel('Language').selectOption('c');
   await setCode(page, 'long long sum_array(int n, const long long *a) {\n    return oops;\n}\n');
@@ -90,6 +92,7 @@ test('guest can practice without an account', async ({ page }) => {
   await page.goto('/login/');
   await page.getByRole('button', { name: /Continue as guest/ }).click();
   await expect(page).toHaveURL(/\/practice\/$/);
+  await page.getByLabel('Search').fill('Sum of an Array');
   await expect(page.getByRole('link', { name: /Sum of an Array/ })).toBeVisible();
   await expect(page.getByRole('link', { name: 'Question bank' })).toHaveCount(0);
 });

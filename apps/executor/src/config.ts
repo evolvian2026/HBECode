@@ -20,6 +20,8 @@ export interface ExecutorConfig {
   pgRunnerUrl?: string;
   mysqlRunnerUrl?: string;
   mongoRunnerUrl?: string;
+  /** PostgreSQL template databases (one per dataset) kept per executor; least recently used are dropped. */
+  pgTemplateCache: number;
 }
 
 export function loadConfig(env: NodeJS.ProcessEnv = process.env): ExecutorConfig {
@@ -41,5 +43,6 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): ExecutorConfig
     pgRunnerUrl: env.PG_RUNNER_URL || undefined,
     mysqlRunnerUrl: env.MYSQL_RUNNER_URL || undefined,
     mongoRunnerUrl: env.MONGO_RUNNER_URL || undefined,
+    pgTemplateCache: Math.max(2, Number(env.PG_TEMPLATE_CACHE ?? 16)),
   };
 }

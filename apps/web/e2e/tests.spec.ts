@@ -29,6 +29,8 @@ async function login(page: Page, email: string) {
   await page.getByLabel('Password').fill(PW);
   await page.getByRole('button', { name: 'Sign in', exact: true }).click();
   await expect(page.getByRole('button', { name: 'Sign out' })).toBeVisible();
+  // Let the post-login redirect from / finish, or the next goto is interrupted by it.
+  await page.waitForURL((u) => !/^\/(login\/?)?$/.test(u.pathname));
 }
 
 /** API session for test setup (CSRF double-submit + Origin, like the browser). */

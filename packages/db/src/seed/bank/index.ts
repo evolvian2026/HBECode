@@ -1,5 +1,4 @@
 import type { CodingQuestionInput, DbQuestionInput, WebQuestionInput } from '@hbe/shared';
-import { customerTotals, monthlyRevenue, topEarner } from '../questions/db-questions.js';
 import { ARRAYS } from './coding/arrays.js';
 import { DP } from './coding/dp.js';
 import { GREEDY } from './coding/greedy.js';
@@ -8,6 +7,12 @@ import { MATH } from './coding/math.js';
 import { SORTING } from './coding/sorting.js';
 import { STRINGS } from './coding/strings.js';
 import { TREES } from './coding/trees.js';
+import { MONGO_AGG } from './data/mongo-agg.js';
+import { MONGO_QUERIES } from './data/mongo-queries.js';
+import { PANDAS } from './data/pandas.js';
+import { SQL_ANALYTICS } from './data/sql-analytics.js';
+import { SQL_BASICS } from './data/sql-basics.js';
+import { SQL_JOINS } from './data/sql-joins.js';
 import { DOM } from './web/dom.js';
 import { HTML_CSS } from './web/html-css.js';
 import { REACT } from './web/react.js';
@@ -38,9 +43,12 @@ export const BANK: BankStack[] = [
   { id: 'html-css', label: 'HTML & CSS layout', kind: 'web', questions: HTML_CSS },
   { id: 'dom', label: 'JavaScript DOM', kind: 'web', questions: DOM },
   { id: 'react', label: 'React', kind: 'web', questions: REACT },
-  { id: 'sql-joins', label: 'SQL joins & subqueries', kind: 'db', questions: [topEarner] },
-  { id: 'mongo-agg', label: 'MongoDB aggregation', kind: 'db', questions: [customerTotals] },
-  { id: 'pandas', label: 'Pandas', kind: 'db', questions: [monthlyRevenue] },
+  { id: 'sql-basics', label: 'SQL basics', kind: 'db', questions: SQL_BASICS },
+  { id: 'sql-joins', label: 'SQL joins & subqueries', kind: 'db', questions: SQL_JOINS },
+  { id: 'sql-analytics', label: 'SQL window functions & CTEs', kind: 'db', questions: SQL_ANALYTICS },
+  { id: 'mongo-queries', label: 'MongoDB queries', kind: 'db', questions: MONGO_QUERIES },
+  { id: 'mongo-agg', label: 'MongoDB aggregation', kind: 'db', questions: MONGO_AGG },
+  { id: 'pandas', label: 'Pandas', kind: 'db', questions: PANDAS },
 ];
 
 export const BANK_QUESTIONS: { stack: string; question: BankQuestion }[] = BANK.flatMap((s) => s.questions.map((question) => ({ stack: s.id, question })));

@@ -104,6 +104,7 @@ test('student builds a React app with live preview, then submits it', async ({ p
   const problems = guard(page);
   await login(page, 'student@demo.edu');
   await expect(page).toHaveURL(/\/practice\/$/);
+  await page.getByLabel('Search').fill('React Shopping Cart');
   await page.getByRole('link', { name: /React Shopping Cart/ }).click();
   await expect(page.getByText('What is checked')).toBeVisible();
 
@@ -156,6 +157,7 @@ test('student builds a React app with live preview, then submits it', async ({ p
 test('the preview sandbox isolates student code from the app and the network', async ({ page }) => {
   const problems = guard(page);
   await login(page, 'student@demo.edu');
+  await page.getByLabel('Search').fill('To-do List');
   await page.getByRole('link', { name: /To-do List/ }).click();
   const frame = await previewFrame(page);
   await expect(frame.locator('#count')).toHaveText('0 tasks left');
@@ -205,6 +207,7 @@ test('the preview sandbox isolates student code from the app and the network', a
 test('student solves a SQL question in PostgreSQL and MySQL', async ({ page }) => {
   const problems = guard(page);
   await login(page, 'student@demo.edu');
+  await page.getByLabel('Search').fill('Top Earner per Department');
   await page.getByRole('link', { name: /Top Earner per Department/ }).click();
   await page.getByLabel('Database').selectOption('postgres');
   // Sample expected output (computed by the reference during validation) is shown.
@@ -241,12 +244,14 @@ ORDER BY d.name`;
 test('student solves the Pandas and MongoDB questions', async ({ page }) => {
   const problems = guard(page);
   await login(page, 'student@demo.edu');
+  await page.getByLabel('Search').fill('Monthly Revenue by Region');
   await page.getByRole('link', { name: /Monthly Revenue by Region/ }).click();
   await setCode(page, "import pandas as pd\n\ndef solve(sales):\n    df = sales.copy()\n    df['month'] = pd.to_datetime(df['date']).dt.strftime('%Y-%m')\n    out = df.groupby(['month', 'region'], as_index=False)['amount'].sum().rename(columns={'amount': 'revenue'})\n    return out.sort_values(['month', 'region'])[['month', 'region', 'revenue']]\n");
   await page.getByRole('button', { name: 'Submit' }).click();
   await expect(page.getByTestId('verdict')).toHaveText('Accepted', { timeout: 60_000 });
 
   await page.goto('/practice/');
+  await page.getByLabel('Search').fill('Paid Order Totals by Customer');
   await page.getByRole('link', { name: /Paid Order Totals by Customer/ }).click();
   await setCode(page, '{"collection": "orders", "pipeline": [{"$where": "true"}]}');
   await page.getByRole('button', { name: /Run/ }).click();

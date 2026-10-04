@@ -83,6 +83,7 @@ services:
       POSTGRES_USER: runner_admin
       POSTGRES_PASSWORD: ${RUNNER_PG_PASSWORD:-runner-pg-dev}
     tmpfs: [/var/lib/postgresql/data]
+    restart: unless-stopped
     networks: [runners]
     mem_limit: 512m
     security_opt: ['no-new-privileges:true']
@@ -97,6 +98,7 @@ services:
     environment:
       MYSQL_ROOT_PASSWORD: ${RUNNER_MYSQL_PASSWORD:-runner-mysql-dev}
     tmpfs: [/var/lib/mysql]
+    restart: unless-stopped
     networks: [runners]
     mem_limit: 768m
     security_opt: ['no-new-privileges:true']
@@ -112,6 +114,7 @@ services:
       MONGO_INITDB_ROOT_USERNAME: root
       MONGO_INITDB_ROOT_PASSWORD: ${RUNNER_MONGO_PASSWORD:-runner-mongo-dev}
     tmpfs: [/data/db]
+    restart: unless-stopped
     networks: [runners]
     mem_limit: 768m # mongod + tmpfs data + the mongosh health check (~150 MB each run)
     security_opt: ['no-new-privileges:true']

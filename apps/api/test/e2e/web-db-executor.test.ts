@@ -54,7 +54,7 @@ async function ip(name: string): Promise<string> {
 }
 
 async function startDbRunners(): Promise<string[]> {
-  for (const n of RUNNERS) await exec('docker', ['rm', '-f', n]).catch(() => undefined);
+  for (const n of RUNNERS) await exec('docker', ['rm', '-f', '-v', n]).catch(() => undefined);
   await exec('docker', ['run', '-d', '--rm', '--name', 'hbe-e2e-pg', '-e', 'POSTGRES_USER=runner_admin', '-e', 'POSTGRES_PASSWORD=e2e-pg-pw', RUNNER_IMAGES.pg]);
   await exec('docker', ['run', '-d', '--rm', '--name', 'hbe-e2e-mysql', '-e', 'MYSQL_ROOT_PASSWORD=e2e-my-pw', RUNNER_IMAGES.mysql, '--local-infile=0', '--secure-file-priv=NULL', '--skip-name-resolve', '--performance-schema=0', '--innodb-buffer-pool-size=64M']);
   await exec('docker', ['run', '-d', '--rm', '--name', 'hbe-e2e-mongo', '-e', 'MONGO_INITDB_ROOT_USERNAME=root', '-e', 'MONGO_INITDB_ROOT_PASSWORD=e2e-mongo-pw', RUNNER_IMAGES.mongo, '--noscripting', '--wiredTigerCacheSizeGB', '0.25']);
@@ -95,9 +95,9 @@ afterAll(async () => {
   if (container) {
     const logs = await exec('docker', ['logs', container]).catch(() => ({ stdout: '' }));
     writeFileSync('/tmp/hbe-e2e-webdb-executor.log', logs.stdout);
-    await exec('docker', ['rm', '-f', container]).catch(() => undefined);
+    await exec('docker', ['rm', '-f', '-v', container]).catch(() => undefined);
   }
-  for (const n of RUNNERS) await exec('docker', ['rm', '-f', n]).catch(() => undefined);
+  for (const n of RUNNERS) await exec('docker', ['rm', '-f', '-v', n]).catch(() => undefined);
   await t?.close();
 });
 

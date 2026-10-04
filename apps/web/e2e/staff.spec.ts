@@ -9,6 +9,7 @@ test('teacher sees the validated question with per-language timings', async ({ p
   await page.getByLabel('Password').fill(PW);
   await page.getByRole('button', { name: 'Sign in', exact: true }).click();
   await expect(page).toHaveURL(/\/questions\/$/);
+  await page.getByLabel('Search').fill('Sum of an Array');
   await page.getByRole('link', { name: 'Sum of an Array' }).click();
   // Global questions are read-only for teachers (super admin owns the global bank).
   await expect(page.getByRole('button', { name: 'Save draft' })).toHaveCount(0);

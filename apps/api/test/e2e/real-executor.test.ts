@@ -63,7 +63,7 @@ afterAll(async () => {
   if (container) {
     const logs = await exec('docker', ['logs', container]).catch(() => ({ stdout: '' }));
     writeFileSync('/tmp/hbe-e2e-executor.log', logs.stdout);
-    await exec('docker', ['rm', '-f', container]).catch(() => undefined);
+    await exec('docker', ['rm', '-f', '-v', container]).catch(() => undefined);
   }
   await t?.close();
 });
