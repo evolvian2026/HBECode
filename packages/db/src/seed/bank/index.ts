@@ -2,7 +2,9 @@ import type { CodingQuestionInput, DbQuestionInput, WebQuestionInput } from '@hb
 import { customerTotals, monthlyRevenue, topEarner } from '../questions/db-questions.js';
 import { profileCard, shoppingCart, todoList } from '../questions/web-questions.js';
 import { ARRAYS } from './coding/arrays.js';
+import { LINEAR } from './coding/linear.js';
 import { MATH } from './coding/math.js';
+import { SORTING } from './coding/sorting.js';
 import { STRINGS } from './coding/strings.js';
 
 export type BankQuestion = CodingQuestionInput | WebQuestionInput | DbQuestionInput;
@@ -23,6 +25,8 @@ export const BANK: BankStack[] = [
   { id: 'arrays', label: 'Arrays & hashing', kind: 'coding', questions: ARRAYS },
   { id: 'strings', label: 'Strings', kind: 'coding', questions: STRINGS },
   { id: 'math', label: 'Math & number theory', kind: 'coding', questions: MATH },
+  { id: 'sorting', label: 'Sorting & searching', kind: 'coding', questions: SORTING },
+  { id: 'linear', label: 'Linked lists, stacks & queues', kind: 'coding', questions: LINEAR },
   { id: 'html-css', label: 'HTML & CSS layout', kind: 'web', questions: [profileCard] },
   { id: 'dom', label: 'JavaScript DOM', kind: 'web', questions: [todoList] },
   { id: 'react', label: 'React', kind: 'web', questions: [shoppingCart] },
