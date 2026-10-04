@@ -102,6 +102,51 @@ jobs:
           pnpm --filter @hbe/api test:e2e
           { echo '### Coding latency (ms)'; echo '```json'; cat /tmp/hbe-e2e-latency.json; echo '```'; echo '### Web/DB latency (ms)'; echo '```json'; cat /tmp/hbe-e2e-webdb-latency.json; echo '```'; } >> "$GITHUB_STEP_SUMMARY"
 
+  seed-bank:
+    name: Seed bank (every question through the validator)
+    runs-on: ubuntu-24.04
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env: { POSTGRES_PASSWORD: postgres }
+        ports: ['5432:5432']
+        options: --health-cmd pg_isready --health-interval 2s --health-retries 30
+      redis:
+        image: redis:7-alpine
+        ports: ['6379:6379']
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: 22, cache: pnpm }
+      - run: pnpm install --frozen-lockfile
+      - uses: docker/setup-buildx-action@v3
+      - name: Build executor image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: apps/executor/Dockerfile
+          tags: hbe-executor:dev
+          load: true
+          cache-from: type=gha
+      - run: pnpm --filter @hbe/shared build && pnpm --filter @hbe/web-runtime build && pnpm --filter @hbe/db build && pnpm --filter @hbe/question-format build && pnpm --filter @hbe/api build
+      - name: Structural checks (17 stacks × 10, publish rules)
+        run: pnpm --filter @hbe/db exec vitest run test/bank.test.ts
+      - name: Validate every seed question in the real sandbox
+        run: |
+          PGPASSWORD=postgres psql -h 127.0.0.1 -U postgres -c "CREATE ROLE hbe_owner LOGIN CREATEROLE CREATEDB PASSWORD 'hbe_owner'"
+          BANK_SLOTS=4 pnpm --filter @hbe/api test:bank
+      - name: Report
+        if: always()
+        run: |
+          [ -f /tmp/hbe-seed-bank.json ] || exit 0
+          node -e '
+            const d = require("/tmp/hbe-seed-bank.json");
+            const lines = [`### Seed bank: ${d.published}/${d.total} published (${d.minutes} min)`, "", "| Stack | Question | Status | Problems |", "|---|---|---|---|"];
+            for (const r of d.results) lines.push(`| ${r.stack} | ${r.title} | ${r.status} | ${r.problems.join("; ").replace(/\|/g, "\\|")} |`);
+            console.log(lines.join("\n"));
+          ' >> "$GITHUB_STEP_SUMMARY"
+
   secrets-scan:
     name: Secret scan
     runs-on: ubuntu-24.04

@@ -1,0 +1,569 @@
+import type { RuntimeId } from '@hbe/shared';
+
+/**
+ * Code generation for seed coding questions. A question declares a typed function signature;
+ * from it we generate, for all 8 languages, the student stub, the driver that parses stdin and
+ * prints the result, and the input/output format text. Solutions are written by hand per
+ * language (function body + optional helpers) and wrapped with the generated signature, so the
+ * signature, the driver and the I/O format can never disagree.
+ *
+ * Wire format (whitespace-separated tokens, one value per line):
+ *   int | long | double | string   → the value (strings never contain whitespace)
+ *   T[]                            → length n, then the n items on one line
+ *   int[][]                        → "rows cols", then one line per row
+ * Output: scalars on one line (bool as true/false, double with 6 decimals), arrays as one
+ * space-separated line, int[][] as one line per row.
+ */
+
+export type ParamType = 'int' | 'long' | 'double' | 'string' | 'int[]' | 'long[]' | 'double[]' | 'string[]' | 'int[][]';
+export type ReturnType = ParamType | 'bool';
+export interface Param {
+  name: string;
+  type: ParamType;
+}
+export type Value = number | bigint | string | boolean | Value[];
+
+export interface Solution {
+  body: string;
+  /** Code placed before the function (module level) or, for Java/C#, inside the class. */
+  helpers?: string;
+  /** Go only: packages the solution imports. */
+  imports?: string[];
+}
+
+const isArray = (t: ReturnType) => t.endsWith('[]') && t !== 'int[][]';
+const elem = (t: ReturnType) => t.replace('[]', '') as 'int' | 'long' | 'double' | 'string';
+
+export const snake = (s: string) => s.replace(/([a-z0-9])([A-Z])/g, '$1_$2').toLowerCase();
+export const pascal = (s: string) => s[0]!.toUpperCase() + s.slice(1);
+const indent = (code: string, n: number) =>
+  code
+    .replace(/\s+$/, '')
+    .split('\n')
+    .map((l) => (l.trim() ? ' '.repeat(n) + l : ''))
+    .join('\n');
+
+// ------------------------------------------------------------------------------- wire format
+
+function check(t: ParamType | ReturnType, v: Value, where: string): void {
+  const fail = (why: string) => {
+    throw new Error(`${where}: ${why}`);
+  };
+  if (t === 'int' && (typeof v !== 'number' || !Number.isInteger(v) || v < -(2 ** 31) || v >= 2 ** 31)) fail(`not a 32-bit int: ${String(v)}`);
+  if (t === 'long' && !(typeof v === 'bigint' || (typeof v === 'number' && Number.isSafeInteger(v)))) fail(`not a safe long: ${String(v)}`);
+  if (t === 'double' && (typeof v !== 'number' || !Number.isFinite(v))) fail(`not a double: ${String(v)}`);
+  if (t === 'bool' && typeof v !== 'boolean') fail('not a bool');
+  if (t === 'string' && typeof v !== 'string') fail('not a string');
+  if (isArray(t) || t === 'int[][]') {
+    if (!Array.isArray(v)) fail('not an array');
+    if (t === 'int[][]') {
+      const rows = v as Value[][];
+      const cols = rows[0]?.length ?? 0;
+      rows.forEach((r, i) => {
+        if (!Array.isArray(r) || r.length !== cols) fail(`row ${i} has a different length`);
+        r.forEach((x) => check('int', x, where));
+      });
+    } else (v as Value[]).forEach((x) => check(elem(t), x, where));
+  }
+}
+
+function token(t: 'int' | 'long' | 'double' | 'string', v: Value, where: string): string {
+  if (t === 'string' && (/\s/.test(v as string) || (v as string) === '')) throw new Error(`${where}: input strings must be non-empty without whitespace`);
+  return String(v);
+}
+
+/** stdin text for one test case. */
+export function encodeInput(params: readonly Param[], args: readonly Value[]): string {
+  if (args.length !== params.length) throw new Error(`expected ${params.length} arguments, got ${args.length}`);
+  let out = '';
+  params.forEach((p, i) => {
+    const v = args[i]!;
+    check(p.type, v, `argument ${p.name}`);
+    if (p.type === 'int[][]') {
+      const rows = v as Value[][];
+      out += `${rows.length} ${rows[0]?.length ?? 0}\n` + rows.map((r) => r.join(' ') + '\n').join('');
+    } else if (isArray(p.type)) {
+      const a = v as Value[];
+      out += `${a.length}\n${a.map((x) => token(elem(p.type), x, p.name)).join(' ')}\n`;
+    } else out += `${token(p.type as 'int', v, p.name)}\n`;
+  });
+  return out;
+}
+
+const fmtScalar = (t: ReturnType, v: Value) => (t === 'double' ? (v as number).toFixed(6) : t === 'bool' ? String(v) : String(v));
+
+/** Expected stdout for a return value. */
+export function encodeOutput(t: ReturnType, v: Value): string {
+  check(t, v, 'return value');
+  if (t === 'int[][]') return (v as Value[][]).map((r) => r.join(' ') + '\n').join('');
+  if (isArray(t)) return (v as Value[]).map((x) => fmtScalar(elem(t), x)).join(' ') + '\n';
+  return fmtScalar(t, v) + '\n';
+}
+
+export function formatText(params: readonly Param[], ret: ReturnType): { inputFormat: string; outputFormat: string } {
+  const lines: string[] = [];
+  const word = (t: string) => ({ int: 'integer', long: 'integer', double: 'real number', string: 'word (no spaces)' })[t] ?? t;
+  for (const p of params) {
+    if (p.type === 'int[][]') lines.push(`- A line with two integers **r c** (rows and columns of \`${p.name}\`), then **r** lines of **c** space-separated integers.`);
+    else if (isArray(p.type)) lines.push(`- A line with the length of \`${p.name}\`, then a line with its ${word(elem(p.type))}s separated by spaces.`);
+    else lines.push(`- A line with \`${p.name}\` (a ${word(p.type)}).`);
+  }
+  const output =
+    ret === 'int[][]'
+      ? 'Print each row of the returned matrix on its own line, values separated by spaces (nothing for an empty result).'
+      : isArray(ret)
+        ? `Print the returned ${elem(ret) === 'string' ? 'words' : 'values'} on one line, separated by spaces${ret === 'double[]' ? ', each with 6 digits after the decimal point' : ''} (an empty line for an empty result).`
+        : ret === 'bool'
+          ? 'Print `true` or `false`.'
+          : ret === 'double'
+            ? 'Print the returned number with 6 digits after the decimal point (answers within 10⁻⁶ are accepted).'
+            : ret === 'string'
+              ? 'Print the returned string.'
+              : 'Print the returned integer.';
+  return { inputFormat: `The driver reads the arguments in this order and calls your function:\n\n${lines.join('\n')}`, outputFormat: `${output} The starter code already does the reading and printing.` };
+}
+
+// ------------------------------------------------------------------------------- languages
+
+type Lang = { type: (t: ReturnType, param: boolean) => string; empty: (t: ReturnType) => string };
+
+const LANGS: Record<RuntimeId, Lang> = {
+  python: {
+    type: (t) => ({ int: 'int', long: 'int', double: 'float', bool: 'bool', string: 'str', 'int[]': 'list[int]', 'long[]': 'list[int]', 'double[]': 'list[float]', 'string[]': 'list[str]', 'int[][]': 'list[list[int]]' })[t],
+    empty: (t) => ({ int: '0', long: '0', double: '0.0', bool: 'False', string: "''" })[t as 'int'] ?? '[]',
+  },
+  javascript: { type: () => '', empty: (t) => ({ int: '0', long: '0', double: '0', bool: 'false', string: "''" })[t as 'int'] ?? '[]' },
+  java: {
+    type: (t) => ({ int: 'int', long: 'long', double: 'double', bool: 'boolean', string: 'String', 'int[]': 'int[]', 'long[]': 'long[]', 'double[]': 'double[]', 'string[]': 'String[]', 'int[][]': 'int[][]' })[t],
+    empty: (t) => ({ int: '0', long: '0L', double: '0.0', bool: 'false', string: '""', 'int[]': 'new int[0]', 'long[]': 'new long[0]', 'double[]': 'new double[0]', 'string[]': 'new String[0]', 'int[][]': 'new int[0][0]' })[t],
+  },
+  csharp: {
+    type: (t) => ({ int: 'int', long: 'long', double: 'double', bool: 'bool', string: 'string', 'int[]': 'int[]', 'long[]': 'long[]', 'double[]': 'double[]', 'string[]': 'string[]', 'int[][]': 'int[][]' })[t],
+    empty: (t) => ({ int: '0', long: '0', double: '0.0', bool: 'false', string: '""', 'int[]': 'new int[0]', 'long[]': 'new long[0]', 'double[]': 'new double[0]', 'string[]': 'new string[0]', 'int[][]': 'new int[0][]' })[t],
+  },
+  go: {
+    type: (t) => ({ int: 'int', long: 'int64', double: 'float64', bool: 'bool', string: 'string', 'int[]': '[]int', 'long[]': '[]int64', 'double[]': '[]float64', 'string[]': '[]string', 'int[][]': '[][]int' })[t],
+    empty: (t) => ({ int: '0', long: '0', double: '0', bool: 'false', string: '""' })[t as 'int'] ?? 'nil',
+  },
+  rust: {
+    type: (t, param) =>
+      param
+        ? { int: 'i32', long: 'i64', double: 'f64', bool: 'bool', string: '&str', 'int[]': '&[i32]', 'long[]': '&[i64]', 'double[]': '&[f64]', 'string[]': '&[String]', 'int[][]': '&[Vec<i32>]' }[t]
+        : { int: 'i32', long: 'i64', double: 'f64', bool: 'bool', string: 'String', 'int[]': 'Vec<i32>', 'long[]': 'Vec<i64>', 'double[]': 'Vec<f64>', 'string[]': 'Vec<String>', 'int[][]': 'Vec<Vec<i32>>' }[t],
+    empty: (t) => ({ int: '0', long: '0', double: '0.0', bool: 'false', string: 'String::new()' })[t as 'int'] ?? 'vec![]',
+  },
+  cpp: {
+    type: (t, param) => {
+      const base = { int: 'int', long: 'long long', double: 'double', bool: 'bool', string: 'string', 'int[]': 'vector<int>', 'long[]': 'vector<long long>', 'double[]': 'vector<double>', 'string[]': 'vector<string>', 'int[][]': 'vector<vector<int>>' }[t];
+      return param && (t === 'string' || t.includes('[]')) ? `const ${base}&` : base;
+    },
+    empty: (t) => ({ int: '0', long: '0', double: '0.0', bool: 'false', string: '""' })[t as 'int'] ?? '{}',
+  },
+  c: { type: () => '', empty: () => '' },
+};
+
+/** C signature: arrays come with their length, returned arrays report theirs via out-parameters. */
+function cSignature(fn: string, params: readonly Param[], ret: ReturnType): string {
+  const ps: string[] = [];
+  for (const p of params) {
+    const n = snake(p.name);
+    if (p.type === 'int[][]') ps.push(`int **${n}, int ${n}_rows, int ${n}_cols`);
+    else if (isArray(p.type)) ps.push(`${{ int: 'const int', long: 'const long long', double: 'const double', string: 'char' }[elem(p.type)]} *${elem(p.type) === 'string' ? '*' : ''}${n}, int ${n}_size`);
+    else ps.push(`${{ int: 'int', long: 'long long', double: 'double', string: 'const char' }[p.type as 'int']} ${p.type === 'string' ? '*' : ''}${n}`);
+  }
+  if (ret === 'int[][]') ps.push('int *return_rows', 'int *return_cols');
+  else if (isArray(ret)) ps.push('int *return_size');
+  const r = { int: 'int', long: 'long long', double: 'double', bool: 'bool', string: 'char *', 'int[]': 'int *', 'long[]': 'long long *', 'double[]': 'double *', 'string[]': 'char **', 'int[][]': 'int **' }[ret];
+  return `${r}${r.endsWith('*') ? '' : ' '}${snake(fn)}(${ps.join(', ')})`;
+}
+function cEmpty(ret: ReturnType): string {
+  if (ret === 'int[][]') return '*return_rows = 0;\n*return_cols = 0;\nreturn NULL;';
+  if (isArray(ret)) return '*return_size = 0;\nreturn NULL;';
+  if (ret === 'string') return 'char *res = malloc(1);\nres[0] = 0;\nreturn res;';
+  return `return ${ret === 'double' ? '0.0' : ret === 'bool' ? 'false' : '0'};`;
+}
+
+export function signature(lang: RuntimeId, fn: string, params: readonly Param[], ret: ReturnType): string {
+  const L = LANGS[lang];
+  const ps = params.map((p) => ({ n: p.name, s: snake(p.name), t: L.type(p.type, true) }));
+  switch (lang) {
+    case 'python':
+      return `def ${snake(fn)}(${ps.map((p) => `${p.s}: ${p.t}`).join(', ')}) -> ${L.type(ret, false)}:`;
+    case 'javascript':
+      return `function ${fn}(${ps.map((p) => p.n).join(', ')}) {`;
+    case 'java':
+      return `${L.type(ret, false)} ${fn}(${ps.map((p) => `${p.t} ${p.n}`).join(', ')}) {`;
+    case 'csharp':
+      return `public ${L.type(ret, false)} ${pascal(fn)}(${ps.map((p) => `${p.t} ${p.n}`).join(', ')})`;
+    case 'go':
+      return `func ${fn}(${ps.map((p) => `${p.n} ${p.t}`).join(', ')}) ${L.type(ret, false)} {`;
+    case 'rust':
+      return `fn ${snake(fn)}(${ps.map((p) => `${p.s}: ${p.t}`).join(', ')}) -> ${L.type(ret, false)} {`;
+    case 'cpp':
+      return `${L.type(ret, false)} ${fn}(${ps.map((p) => `${p.t} ${p.n}`).join(', ')}) {`;
+    case 'c':
+      return `${cSignature(fn, params, ret)} {`;
+  }
+}
+
+/** The student's file: signature wrapped around `body` (stub or reference solution). */
+export function studentFile(lang: RuntimeId, fn: string, params: readonly Param[], ret: ReturnType, sol: Solution): string {
+  const sig = signature(lang, fn, params, ret);
+  const h = sol.helpers?.replace(/\s+$/, '');
+  switch (lang) {
+    case 'python':
+      return `${h ? `${h}\n\n\n` : ''}${sig}\n${indent(sol.body, 4)}\n`;
+    case 'javascript':
+    case 'cpp':
+    case 'c':
+    case 'rust':
+      return `${h ? `${h}\n\n` : ''}${sig}\n${indent(sol.body, lang === 'rust' || lang === 'javascript' ? (lang === 'javascript' ? 2 : 4) : 4)}\n}\n`;
+    case 'go': {
+      const imports = sol.imports?.length ? `import (\n${sol.imports.map((i) => `\t"${i}"`).join('\n')}\n)\n\n` : '';
+      const tabs = (s: string) => s.replace(/^( {4})+/gm, (m) => '\t'.repeat(m.length / 4));
+      return `package main\n\n${imports}${h ? `${tabs(h)}\n\n` : ''}${sig}\n${tabs(indent(sol.body, 4))}\n}\n`;
+    }
+    case 'java':
+      return `import java.util.*;\n\nclass Solution {\n${h ? `${indent(h, 4)}\n\n` : ''}    ${sig}\n${indent(sol.body, 8)}\n    }\n}\n`;
+    case 'csharp':
+      return `using System;\nusing System.Collections.Generic;\nusing System.Linq;\n\npublic class Solution\n{\n${h ? `${indent(h, 4)}\n\n` : ''}    ${sig}\n    {\n${indent(sol.body, 8)}\n    }\n}\n`;
+  }
+}
+
+export function stub(lang: RuntimeId, fn: string, params: readonly Param[], ret: ReturnType): string {
+  const comment = lang === 'python' ? '# write your code here' : '// write your code here';
+  const empty = lang === 'c' ? cEmpty(ret) : lang === 'python' || lang === 'rust' ? (lang === 'python' ? `return ${LANGS.python.empty(ret)}` : LANGS.rust.empty(ret)) : `return ${LANGS[lang].empty(ret)};`;
+  return studentFile(lang, fn, params, ret, { body: `${comment}\n${empty}` });
+}
+
+// ------------------------------------------------------------------------------- drivers
+
+export function driver(lang: RuntimeId, fn: string, params: readonly Param[], ret: ReturnType): string {
+  switch (lang) {
+    case 'python':
+      return pyDriver(fn, params, ret);
+    case 'javascript':
+      return jsDriver(fn, params, ret);
+    case 'java':
+      return javaDriver(fn, params, ret);
+    case 'csharp':
+      return csDriver(fn, params, ret);
+    case 'go':
+      return goDriver(fn, params, ret);
+    case 'rust':
+      return rustDriver(fn, params, ret);
+    case 'cpp':
+      return cppDriver(fn, params, ret);
+    case 'c':
+      return cDriver(fn, params, ret);
+  }
+}
+
+function pyDriver(fn: string, params: readonly Param[], ret: ReturnType): string {
+  const conv = (t: string) => (t === 'int' || t === 'long' ? 'int' : t === 'double' ? 'float' : 'bytes.decode');
+  const reads = params.map((p, i) => {
+    const v = `_a${i}`;
+    if (p.type === 'int[][]') return `    _r, _c = int(_t[_p]), int(_t[_p + 1])\n    _p += 2\n    ${v} = [list(map(int, _t[_p + i * _c:_p + (i + 1) * _c])) for i in range(_r)]\n    _p += _r * _c`;
+    if (isArray(p.type)) return `    _n = int(_t[_p])\n    _p += 1\n    ${v} = list(map(${conv(elem(p.type))}, _t[_p:_p + _n]))\n    _p += _n`;
+    return `    ${v} = ${conv(p.type)}(_t[_p])\n    _p += 1`;
+  });
+  const call = `${snake(fn)}(${params.map((_, i) => `_a${i}`).join(', ')})`;
+  const out =
+    ret === 'int[][]'
+      ? '    sys.stdout.write("".join(" ".join(map(str, row)) + "\\n" for row in _res))'
+      : ret === 'double[]'
+        ? '    print(" ".join(f"{x:.6f}" for x in _res))'
+        : isArray(ret)
+          ? '    print(" ".join(map(str, _res)))'
+          : ret === 'double'
+            ? '    print(f"{_res:.6f}")'
+            : ret === 'bool'
+              ? '    print("true" if _res else "false")'
+              : '    print(_res)';
+  return `\nimport sys\n\n\ndef _main():\n    _t = sys.stdin.buffer.read().split()\n    _p = 0\n${reads.join('\n')}\n    _res = ${call}\n${out}\n\n\n_main()\n`;
+}
+
+function jsDriver(fn: string, params: readonly Param[], ret: ReturnType): string {
+  const conv = (t: string) => (t === 'string' ? '' : '.map(Number)');
+  const reads = params.map((p, i) => {
+    const v = `__a${i}`;
+    if (p.type === 'int[][]') return `const ${v} = (() => { const r = Number(__t[__p++]); const c = Number(__t[__p++]); const g = []; for (let i = 0; i < r; i++) { g.push(__t.slice(__p, __p + c).map(Number)); __p += c; } return g; })();`;
+    if (isArray(p.type)) return `const ${v} = (() => { const n = Number(__t[__p++]); const a = __t.slice(__p, __p + n)${conv(elem(p.type))}; __p += n; return a; })();`;
+    return `const ${v} = ${p.type === 'string' ? '__t[__p++]' : 'Number(__t[__p++])'};`;
+  });
+  const out =
+    ret === 'int[][]'
+      ? "process.stdout.write(__res.map((r) => r.join(' ') + '\\n').join(''));"
+      : ret === 'double[]'
+        ? "console.log(__res.map((x) => x.toFixed(6)).join(' '));"
+        : isArray(ret)
+          ? "console.log(__res.join(' '));"
+          : ret === 'double'
+            ? 'console.log(__res.toFixed(6));'
+            : ret === 'bool'
+              ? "console.log(__res ? 'true' : 'false');"
+              : 'console.log(String(__res));';
+  return `\nconst __t = require('fs').readFileSync(0, 'utf8').split(/\\s+/).filter(Boolean);\nlet __p = 0;\n${reads.join('\n')}\nconst __res = ${fn}(${params.map((_, i) => `__a${i}`).join(', ')});\n${out}\n`;
+}
+
+function javaDriver(fn: string, params: readonly Param[], ret: ReturnType): string {
+  const parse = (t: string, x: string) => ({ int: `Integer.parseInt(${x})`, long: `Long.parseLong(${x})`, double: `Double.parseDouble(${x})`, string: x })[t]!;
+  const jt = (t: string) => ({ int: 'int', long: 'long', double: 'double', string: 'String' })[t]!;
+  const reads = params.map((p, i) => {
+    const v = `a${i}`;
+    if (p.type === 'int[][]') return `        int r${i} = Integer.parseInt(next()), c${i} = Integer.parseInt(next());\n        int[][] ${v} = new int[r${i}][c${i}];\n        for (int i = 0; i < r${i}; i++) for (int j = 0; j < c${i}; j++) ${v}[i][j] = Integer.parseInt(next());`;
+    if (isArray(p.type)) return `        int n${i} = Integer.parseInt(next());\n        ${jt(elem(p.type))}[] ${v} = new ${jt(elem(p.type))}[n${i}];\n        for (int i = 0; i < n${i}; i++) ${v}[i] = ${parse(elem(p.type), 'next()')};`;
+    return `        ${jt(p.type)} ${v} = ${parse(p.type, 'next()')};`;
+  });
+  const rt = LANGS.java.type(ret, false);
+  const out =
+    ret === 'int[][]'
+      ? '        for (int[] row : res) { for (int j = 0; j < row.length; j++) { if (j > 0) sb.append(\' \'); sb.append(row[j]); } sb.append(\'\\n\'); }'
+      : isArray(ret)
+        ? `        for (int i = 0; i < res.length; i++) { if (i > 0) sb.append(' '); sb.append(${ret === 'double[]' ? 'String.format(Locale.ROOT, "%.6f", res[i])' : 'res[i]'}); }\n        sb.append('\\n');`
+        : ret === 'double'
+          ? '        sb.append(String.format(Locale.ROOT, "%.6f", res)).append(\'\\n\');'
+          : '        sb.append(res).append(\'\\n\');';
+  return `import java.io.*;
+import java.util.*;
+
+public class Main {
+    private static final DataInputStream IN = new DataInputStream(new BufferedInputStream(System.in, 1 << 16));
+
+    private static String next() throws IOException {
+        StringBuilder b = new StringBuilder();
+        int c = IN.read();
+        while (c != -1 && c <= ' ') c = IN.read();
+        while (c != -1 && c > ' ') { b.append((char) c); c = IN.read(); }
+        return b.toString();
+    }
+
+    public static void main(String[] args) throws IOException {
+${reads.join('\n')}
+        ${rt} res = new Solution().${fn}(${params.map((_, i) => `a${i}`).join(', ')});
+        StringBuilder sb = new StringBuilder();
+${out}
+        PrintStream ps = new PrintStream(new BufferedOutputStream(System.out, 1 << 16), false);
+        ps.print(sb);
+        ps.flush();
+    }
+}
+`;
+}
+
+function csDriver(fn: string, params: readonly Param[], ret: ReturnType): string {
+  const parse = (t: string, x: string) => ({ int: `int.Parse(${x})`, long: `long.Parse(${x})`, double: `double.Parse(${x}, CultureInfo.InvariantCulture)`, string: x })[t]!;
+  const ct = (t: string) => ({ int: 'int', long: 'long', double: 'double', string: 'string' })[t]!;
+  const reads = params.map((p, i) => {
+    const v = `a${i}`;
+    if (p.type === 'int[][]') return `        int r${i} = int.Parse(t[p++]), c${i} = int.Parse(t[p++]);\n        var ${v} = new int[r${i}][];\n        for (int i = 0; i < r${i}; i++) { ${v}[i] = new int[c${i}]; for (int j = 0; j < c${i}; j++) ${v}[i][j] = int.Parse(t[p++]); }`;
+    if (isArray(p.type)) return `        int n${i} = int.Parse(t[p++]);\n        var ${v} = new ${ct(elem(p.type))}[n${i}];\n        for (int i = 0; i < n${i}; i++) ${v}[i] = ${parse(elem(p.type), 't[p++]')};`;
+    return `        ${ct(p.type)} ${v} = ${parse(p.type, 't[p++]')};`;
+  });
+  const fmt = (x: string, t: string) => (t === 'double' ? `${x}.ToString("F6", CultureInfo.InvariantCulture)` : t === 'bool' ? `(${x} ? "true" : "false")` : x);
+  const out =
+    ret === 'int[][]'
+      ? "        foreach (var row in res) { for (int j = 0; j < row.Length; j++) { if (j > 0) sb.Append(' '); sb.Append(row[j]); } sb.Append('\\n'); }"
+      : isArray(ret)
+        ? `        for (int i = 0; i < res.Length; i++) { if (i > 0) sb.Append(' '); sb.Append(${fmt('res[i]', elem(ret))}); }\n        sb.Append('\\n');`
+        : `        sb.Append(${fmt('res', ret)}).Append('\\n');`;
+  return `using System;
+using System.Globalization;
+using System.Text;
+
+public static class Program
+{
+    public static void Main()
+    {
+        var t = Console.In.ReadToEnd().Split((char[])null, StringSplitOptions.RemoveEmptyEntries);
+        int p = 0;
+${reads.join('\n')}
+        var res = new Solution().${pascal(fn)}(${params.map((_, i) => `a${i}`).join(', ')});
+        var sb = new StringBuilder();
+${out}
+        Console.Out.Write(sb.ToString());
+        Console.Out.Flush();
+    }
+}
+`;
+}
+
+function goDriver(fn: string, params: readonly Param[], ret: ReturnType): string {
+  const parse = (t: string) => ({ int: 'atoi(next())', long: 'atoi64(next())', double: 'atof(next())', string: 'next()' })[t]!;
+  const gt = (t: string) => ({ int: 'int', long: 'int64', double: 'float64', string: 'string' })[t]!;
+  const reads = params.map((p, i) => {
+    const v = `a${i}`;
+    if (p.type === 'int[][]') return `\tr${i}, c${i} := atoi(next()), atoi(next())\n\t${v} := make([][]int, r${i})\n\tfor i := range ${v} {\n\t\t${v}[i] = make([]int, c${i})\n\t\tfor j := range ${v}[i] {\n\t\t\t${v}[i][j] = atoi(next())\n\t\t}\n\t}`;
+    if (isArray(p.type)) return `\tn${i} := atoi(next())\n\t${v} := make([]${gt(elem(p.type))}, n${i})\n\tfor i := range ${v} {\n\t\t${v}[i] = ${parse(elem(p.type))}\n\t}`;
+    return `\t${v} := ${parse(p.type)}`;
+  });
+  const fmtOne = (x: string, t: string) =>
+    ({ int: `strconv.Itoa(${x})`, long: `strconv.FormatInt(${x}, 10)`, double: `strconv.FormatFloat(${x}, 'f', 6, 64)`, string: x, bool: `strconv.FormatBool(${x})` })[t]!;
+  const out =
+    ret === 'int[][]'
+      ? '\tfor _, row := range res {\n\t\tfor j, x := range row {\n\t\t\tif j > 0 {\n\t\t\t\tw.WriteByte(\' \')\n\t\t\t}\n\t\t\tw.WriteString(strconv.Itoa(x))\n\t\t}\n\t\tw.WriteByte(\'\\n\')\n\t}'
+      : isArray(ret)
+        ? `\tfor i, x := range res {\n\t\tif i > 0 {\n\t\t\tw.WriteByte(' ')\n\t\t}\n\t\tw.WriteString(${fmtOne('x', elem(ret))})\n\t}\n\tw.WriteByte('\\n')`
+        : `\tw.WriteString(${fmtOne('res', ret)})\n\tw.WriteByte('\\n')`;
+  return `package main
+
+import (
+\t"bufio"
+\t"os"
+\t"strconv"
+)
+
+func main() {
+\tsc := bufio.NewScanner(os.Stdin)
+\tsc.Buffer(make([]byte, 1<<20), 64<<20)
+\tsc.Split(bufio.ScanWords)
+\tnext := func() string {
+\t\tsc.Scan()
+\t\treturn sc.Text()
+\t}
+\tatoi := func(s string) int { v, _ := strconv.Atoi(s); return v }
+\tatoi64 := func(s string) int64 { v, _ := strconv.ParseInt(s, 10, 64); return v }
+\tatof := func(s string) float64 { v, _ := strconv.ParseFloat(s, 64); return v }
+\t_, _, _ = atoi, atoi64, atof
+${reads.join('\n')}
+\tres := ${fn}(${params.map((_, i) => `a${i}`).join(', ')})
+\tw := bufio.NewWriterSize(os.Stdout, 1<<16)
+\tdefer w.Flush()
+${out}
+}
+`;
+}
+
+function rustDriver(fn: string, params: readonly Param[], ret: ReturnType): string {
+  const rt = (t: string) => ({ int: 'i32', long: 'i64', double: 'f64' })[t]!;
+  const reads = params.map((p, i) => {
+    const v = `a${i}`;
+    if (p.type === 'int[][]') return `    let r${i}: usize = it.next().unwrap().parse().unwrap();\n    let c${i}: usize = it.next().unwrap().parse().unwrap();\n    let ${v}: Vec<Vec<i32>> = (0..r${i}).map(|_| (0..c${i}).map(|_| it.next().unwrap().parse().unwrap()).collect()).collect();`;
+    if (isArray(p.type)) {
+      const e = elem(p.type);
+      return `    let n${i}: usize = it.next().unwrap().parse().unwrap();\n    let ${v}: Vec<${e === 'string' ? 'String' : rt(e)}> = (0..n${i}).map(|_| it.next().unwrap()${e === 'string' ? '.to_string()' : '.parse().unwrap()'}).collect();`;
+    }
+    if (p.type === 'string') return `    let ${v}: String = it.next().unwrap().to_string();`;
+    return `    let ${v}: ${rt(p.type)} = it.next().unwrap().parse().unwrap();`;
+  });
+  const arg = (p: Param, i: number) => (p.type === 'string' || p.type.includes('[]') ? `&a${i}` : `a${i}`);
+  const fmtOne = (t: string) => (t === 'double' ? '{:.6}' : '{}');
+  const out =
+    ret === 'int[][]'
+      ? '    for row in &res {\n        let line: Vec<String> = row.iter().map(|x| x.to_string()).collect();\n        writeln!(o, "{}", line.join(" ")).unwrap();\n    }'
+      : isArray(ret)
+        ? `    let line: Vec<String> = res.iter().map(|x| format!("${fmtOne(elem(ret))}", x)).collect();\n    writeln!(o, "{}", line.join(" ")).unwrap();`
+        : `    writeln!(o, "${fmtOne(ret)}", res).unwrap();`;
+  return `
+fn main() {
+    use std::io::{Read, Write};
+    let mut input = String::new();
+    std::io::stdin().read_to_string(&mut input).unwrap();
+    let mut it = input.split_ascii_whitespace();
+${reads.join('\n')}
+    let res = ${snake(fn)}(${params.map(arg).join(', ')});
+    let stdout = std::io::stdout();
+    let mut o = std::io::BufWriter::new(stdout.lock());
+${out}
+}
+`;
+}
+
+function cppDriver(fn: string, params: readonly Param[], ret: ReturnType): string {
+  const ct = (t: string) => ({ int: 'int', long: 'long long', double: 'double', string: 'string' })[t]!;
+  const reads = params.map((p, i) => {
+    const v = `a${i}`;
+    if (p.type === 'int[][]') return `    int r${i}, c${i};\n    cin >> r${i} >> c${i};\n    vector<vector<int>> ${v}(r${i}, vector<int>(c${i}));\n    for (auto& row : ${v}) for (auto& x : row) cin >> x;`;
+    if (isArray(p.type)) return `    int n${i};\n    cin >> n${i};\n    vector<${ct(elem(p.type))}> ${v}(n${i});\n    for (auto& x : ${v}) cin >> x;`;
+    return `    ${ct(p.type)} ${v};\n    cin >> ${v};`;
+  });
+  const out =
+    ret === 'int[][]'
+      ? "    for (const auto& row : res) {\n        for (size_t j = 0; j < row.size(); j++) { if (j) cout << ' '; cout << row[j]; }\n        cout << '\\n';\n    }"
+      : isArray(ret)
+        ? `    for (size_t i = 0; i < res.size(); i++) { if (i) cout << ' '; cout << res[i]; }\n    cout << '\\n';`
+        : ret === 'bool'
+          ? '    cout << (res ? "true" : "false") << \'\\n\';'
+          : "    cout << res << '\\n';";
+  return `#include <bits/stdc++.h>
+using namespace std;
+// @@STUDENT_CODE@@
+int main() {
+    ios::sync_with_stdio(false);
+    cin.tie(nullptr);
+${reads.join('\n')}
+    auto res = ${fn}(${params.map((_, i) => `a${i}`).join(', ')});
+${ret === 'double' || ret === 'double[]' ? '    cout << fixed << setprecision(6);\n' : ''}${out}
+    return 0;
+}
+`;
+}
+
+function cDriver(fn: string, params: readonly Param[], ret: ReturnType): string {
+  const parse = (t: string, x: string) => ({ int: `atoi(${x})`, long: `atoll(${x})`, double: `atof(${x})`, string: x })[t]!;
+  const ct = (t: string) => ({ int: 'int', long: 'long long', double: 'double', string: 'char *' })[t]!;
+  const args: string[] = [];
+  const reads = params.map((p, i) => {
+    const v = `a${i}`;
+    if (p.type === 'int[][]') {
+      args.push(v, `r${i}`, `c${i}`);
+      return `    int r${i} = atoi(hbe_next()), c${i} = atoi(hbe_next());\n    int **${v} = malloc(sizeof(int *) * (size_t)(r${i} > 0 ? r${i} : 1));\n    for (int i = 0; i < r${i}; i++) { ${v}[i] = malloc(sizeof(int) * (size_t)(c${i} > 0 ? c${i} : 1)); for (int j = 0; j < c${i}; j++) ${v}[i][j] = atoi(hbe_next()); }`;
+    }
+    if (isArray(p.type)) {
+      args.push(v, `n${i}`);
+      const e = elem(p.type);
+      return `    int n${i} = atoi(hbe_next());\n    ${ct(e)}${e === 'string' ? '' : ' '}*${v} = malloc(sizeof(${ct(e)}) * (size_t)(n${i} > 0 ? n${i} : 1));\n    for (int i = 0; i < n${i}; i++) ${v}[i] = ${parse(e, 'hbe_next()')};`;
+    }
+    args.push(v);
+    return `    ${ct(p.type)}${p.type === 'string' ? '' : ' '}${v} = ${parse(p.type, 'hbe_next()')};`;
+  });
+  const fmt = (t: string) => ({ int: '%d', long: '%lld', double: '%.6f', string: '%s' })[t]!;
+  let call: string;
+  let out: string;
+  if (ret === 'int[][]') {
+    call = `    int rr = 0, rc = 0;\n    int **res = ${snake(fn)}(${[...args, '&rr', '&rc'].join(', ')});`;
+    out = "    for (int i = 0; i < rr; i++) {\n        for (int j = 0; j < rc; j++) { if (j) putchar(' '); printf(\"%d\", res[i][j]); }\n        putchar('\\n');\n    }";
+  } else if (isArray(ret)) {
+    const e = elem(ret);
+    call = `    int rn = 0;\n    ${ct(e)}${e === 'string' ? '' : ' '}*res = ${snake(fn)}(${[...args, '&rn'].join(', ')});`;
+    out = `    for (int i = 0; i < rn; i++) { if (i) putchar(' '); printf("${fmt(e)}", res[i]); }\n    putchar('\\n');`;
+  } else {
+    const r = { int: 'int', long: 'long long', double: 'double', bool: 'bool', string: 'char *' }[ret as 'int'];
+    call = `    ${r}${r.endsWith('*') ? '' : ' '}res = ${snake(fn)}(${args.join(', ')});`;
+    out = ret === 'bool' ? '    puts(res ? "true" : "false");' : `    printf("${fmt(ret)}\\n", res);`;
+  }
+  return `#include <ctype.h>
+#include <limits.h>
+#include <math.h>
+#include <stdbool.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+// @@STUDENT_CODE@@
+static char *hbe_in;
+static size_t hbe_pos;
+static void hbe_load(void) {
+    size_t cap = 1 << 16, len = 0, k;
+    hbe_in = malloc(cap);
+    while ((k = fread(hbe_in + len, 1, cap - len - 1, stdin)) > 0) {
+        len += k;
+        if (cap - len - 1 == 0) { cap *= 2; hbe_in = realloc(hbe_in, cap); }
+    }
+    hbe_in[len] = 0;
+}
+static char *hbe_next(void) {
+    while (hbe_in[hbe_pos] && isspace((unsigned char)hbe_in[hbe_pos])) hbe_pos++;
+    char *s = hbe_in + hbe_pos;
+    while (hbe_in[hbe_pos] && !isspace((unsigned char)hbe_in[hbe_pos])) hbe_pos++;
+    if (hbe_in[hbe_pos]) hbe_in[hbe_pos++] = 0;
+    return s;
+}
+int main(void) {
+    hbe_load();
+${reads.join('\n')}
+${call}
+${out}
+    return 0;
+}
+`;
+}

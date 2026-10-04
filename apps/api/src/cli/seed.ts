@@ -3,14 +3,15 @@
  *   SEED_ADMIN_EMAIL / SEED_ADMIN_PASSWORD   super admin (required)
  *   SEED_DEMO_PASSWORD                       if set, also creates "Demo University" with a
  *                                            client admin, teacher, associate and student
- * Seed questions are inserted as drafts and queued for validation with publish-on-success, so
- * nothing is published until the real sandbox has run every reference solution on every test.
- * Idempotent: existing users/questions are left alone.
+ * The seed bank (17 stacks × 10 questions) is inserted into the global bank as drafts and queued
+ * for validation with publish-on-success, so nothing is published until the real sandbox has run
+ * every reference solution on every test. Idempotent: users and published questions are left
+ * alone; an unpublished seed question is updated to the current bank content and re-validated.
  */
 import 'reflect-metadata';
 import { NestFactory } from '@nestjs/core';
 import { memberships, questions, questionVersions, tenants, users } from '@hbe/db';
-import { customerTotals, monthlyRevenue, profileCard, shoppingCart, sumArray, todoList, topEarner } from '@hbe/db/seed';
+import { BANK_QUESTIONS } from '@hbe/db/seed';
 import { and, eq, isNull } from 'drizzle-orm';
 import { AppModule } from '../app.module.js';
 import { PasswordService } from '../auth/password.service.js';
@@ -18,7 +19,6 @@ import type { AuthUser } from '../common/decorators.js';
 import { DbService } from '../infra/infra.module.js';
 import { QuestionsService } from '../questions/questions.service.js';
 
-const SEED_QUESTIONS = [sumArray, profileCard, todoList, shoppingCart, topEarner, customerTotals, monthlyRevenue];
 
 const adminEmail = process.env.SEED_ADMIN_EMAIL?.trim().toLowerCase();
 const adminPassword = process.env.SEED_ADMIN_PASSWORD;
@@ -64,7 +64,8 @@ if (process.env.SEED_DEMO_PASSWORD) {
 
 const admin: AuthUser = { id: adminId, role: 'super_admin', tenantId: null, sessionId: 'seed', mfa: true, mfaSetupRequired: false };
 const meta = { ip: '127.0.0.1', userAgent: 'seed', requestId: 'seed' };
-for (const q of SEED_QUESTIONS) {
+let queued = 0;
+for (const { question: q } of BANK_QUESTIONS) {
   const existing = await db.system(async (tx) => {
     const rows = await tx
       .select({ id: questions.id, status: questions.status })
@@ -74,20 +75,18 @@ for (const q of SEED_QUESTIONS) {
       .limit(1);
     return rows[0];
   });
-  if (existing?.status === 'published') {
-    console.log(`"${q.title}": already published`);
+  if (existing?.status === 'published') continue;
+  let id = existing?.id;
+  try {
+    if (id) await qs.update(admin, id, { ...q, global: true }, meta);
+    else id = (await qs.create(admin, { ...q, global: true }, meta)).id;
+  } catch (e) {
+    console.log(`skipped "${q.title}": ${(e as Error).message}`);
     continue;
   }
-  let id = existing?.id;
-  if (!id) {
-    try {
-      id = (await qs.create(admin, { ...q, global: true }, meta)).id;
-    } catch (e) {
-      console.log(`skipped "${q.title}": ${(e as Error).message}`);
-      continue;
-    }
-  }
   const v = await qs.validate(admin, id, true, meta);
-  console.log(`"${q.title}": ${v.status}${v.problems.length ? ` (${v.problems.join('; ')})` : ' — publishes automatically once an executor validates it'}`);
+  if (v.problems.length) console.log(`"${q.title}": ${v.status} (${v.problems.join('; ')})`);
+  else queued++;
 }
+console.log(`${BANK_QUESTIONS.length} seed questions: ${queued} queued for validation (they publish automatically once an executor validates them); the rest were already published`);
 await app.close();
