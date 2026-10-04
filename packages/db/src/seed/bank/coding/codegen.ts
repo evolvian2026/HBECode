@@ -183,7 +183,13 @@ function cEmpty(ret: ReturnType): string {
   return `return ${ret === 'double' ? '0.0' : ret === 'bool' ? 'false' : '0'};`;
 }
 
+/** Names that are keywords or common built-ins in at least one of the 8 languages. */
+const RESERVED = new Set(
+  'base bool byte case chan char checked class const continue default delegate do double else enum event explicit extern false final fixed float fn for func go goto if impl implicit in int interface internal is len let list lock long loop map match mod namespace new nil none null object operator out override package params private protected public range readonly ref return sbyte sealed select self short sizeof static str string struct super switch this throw trait true try type typeof uint ulong unchecked unsafe use ushort using var virtual void volatile where while yield'.split(' '),
+);
+
 export function signature(lang: RuntimeId, fn: string, params: readonly Param[], ret: ReturnType): string {
+  for (const n of [fn, ...params.map((p) => p.name)]) if (RESERVED.has(n.toLowerCase()) || RESERVED.has(snake(n))) throw new Error(`"${n}" is reserved in at least one language`);
   const L = LANGS[lang];
   const ps = params.map((p) => ({ n: p.name, s: snake(p.name), t: L.type(p.type, true) }));
   switch (lang) {

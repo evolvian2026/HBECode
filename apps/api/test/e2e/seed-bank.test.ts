@@ -102,7 +102,8 @@ describe('seed bank in the real sandbox', () => {
     for (const c of created) {
       const q = await waitFor(async () => {
         const x = (await teacher.get(`/api/v1/questions/${c.id}`)).json() as { status: string; validation?: Report };
-        return x.status === 'published' || x.status === 'invalid' || (x.validation && !x.validation.pending) ? x : undefined;
+        // Publishing follows a successful validation in a separate step: wait for it.
+        return x.status === 'published' || x.status === 'invalid' || (x.validation && !x.validation.pending && !x.validation.ok) ? x : undefined;
       }, 60 * 60_000, 1000);
       const rt = q.validation?.runtimes ?? {};
       results.push({
