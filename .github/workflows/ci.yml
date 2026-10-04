@@ -23,7 +23,8 @@ jobs:
       - run: pnpm install --frozen-lockfile
       - run: pnpm --filter @hbe/shared build && pnpm --filter @hbe/web-runtime build && pnpm --filter @hbe/db build && pnpm --filter @hbe/question-format build
       - run: pnpm lint
-      - run: pnpm --filter @hbe/api exec tsc -p tsconfig.json --noEmit
+      # The API tests import its compiled output (dist), so build before typechecking them.
+      - run: pnpm --filter @hbe/api build && pnpm --filter @hbe/api exec tsc -p tsconfig.json --noEmit
       - run: pnpm --filter @hbe/executor typecheck
       - run: pnpm --filter @hbe/shared test
       - run: pnpm --filter @hbe/web-runtime test
@@ -86,7 +87,7 @@ jobs:
           cache-from: type=gha
           cache-to: type=gha,mode=max
       - name: Scan image (Trivy)
-        uses: aquasecurity/trivy-action@0.28.0
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
         with:
           image-ref: hbe-executor:dev
           severity: CRITICAL
