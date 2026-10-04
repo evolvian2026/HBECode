@@ -779,6 +779,18 @@ flowchart TB
 | **Executor warm-up** (review follow-up): at startup the executor compiles and runs a tiny program in every language, one at a time, before claiming jobs; a compile that times out on wall clock while using < 50% of it in CPU is retried once. | After a reboot the multi-GB toolchains are cold on disk and parallel compiles exceeded the 20 s limit (seen twice on the dev box), which students would see as a false compile error. |
 | Executors report themselves on every claim (Redis key with a 5-minute TTL) so the platform page can list live executors and their runtimes. | No new table or endpoint for the executor. |
 
+### 15.9 Design changes made during Phase 7 (decision log)
+
+| Change | Reason |
+|---|---|
+| **The seed bank is code** (`packages/db/src/seed/bank/`), not hand-written JSON: each coding question is a TypeScript spec (signature, statement, a TS reference `solve`, test generators), and a generator writes the stub, driver and reference solution for all **8 languages** from it. Expected outputs come from the TS reference; the validator then proves every language's reference agrees. | 80 problems × 8 languages × 3 files is 1,920 files that would drift by hand. One spec per problem keeps statement, tests and every language in step. |
+| **17 topic stacks × 10 questions, 4 easy / 4 moderate / 2 hard** (owner decision): 8 coding (arrays & hashing, strings, math, sorting & searching, linked lists/stacks/queues, trees & graphs, DP, greedy & intervals), 3 web (HTML & CSS, JavaScript DOM, React), 6 data (SQL basics, SQL joins & subqueries, SQL window functions & CTEs — each in PostgreSQL **and** MySQL — MongoDB queries, MongoDB aggregation, Pandas). | Topic stacks map directly to how teachers build practice sets and tests. |
+| **Every bank question goes through the same validator as a teacher's question**, in the real sandbox, and is published only if it passes. CI job `seed-bank` builds the executor image and validates all 170 (`pnpm --filter @hbe/api test:bank`; `BANK_STACKS=…` limits it locally). A structural test (`packages/db/test/bank.test.ts`) checks counts, difficulty mix, unique titles, schema and publish rules, 8 templates per coding question and output sizes without the sandbox. | "100 % pass the validator in CI" is the Phase 7 exit criterion; the structural test catches mistakes in seconds. |
+| Tree and linked-list parameters use **LeetCode-style level-order input** (`[1,2,null,3]`) and a `TreeNode` / `ListNode` type defined in each language's student file (Python, JS, Rust, C++, C) or driver (Java, Go, C#, noted in a comment). | Familiar to students; one input format for every language. |
+| SQL bank questions avoid behaviour that differs between PostgreSQL and MySQL (NULL ordering, case-sensitive comparison, `LEAST`/`GREATEST` with NULLs, integer vs decimal division, DATE output, reserved words such as `rank` and `change`). | The validator requires both dialects to return the same result on every dataset. |
+| **JIT is off for the PostgreSQL sandbox role** (`ALTER ROLE … SET jit = off`). | A recursive CTE over five rows took 3.3 s instead of 1 ms because the planner's cost estimate for unanalysed tables triggered JIT compilation, which students would have seen as a time-limit failure. |
+| **PostgreSQL template databases are evicted least-recently-used**: each executor keeps at most `PG_TEMPLATE_CACHE` (default 16). A template being copied is never dropped. A run whose template was dropped by another executor rebuilds it once. | Each database costs ~7.5 MB of the runner's tmpfs-backed 512 MB. Without a cap, validating the 600 SQL datasets OOM-killed the runner on a fresh stack. |
+
 ## 16. AWS target architecture and migration
 
 ```mermaid

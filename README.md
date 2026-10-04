@@ -4,7 +4,9 @@ A multi-tenant online coding assessment platform. Students write code in a brows
 secure sandbox against hidden tests, and get feedback in about a second. Institutions manage their
 own teachers, students and batches; teachers manage the question bank.
 
-**Status: Phase 6 of 8 (reports and exports) — done, awaiting review.** See the [Phase 6 report](docs/phase-6-report.md) (and [Phase 5](docs/phase-5-report.md), [Phase 4](docs/phase-4-report.md), [Phase 3](docs/phase-3-report.md), [Phase 2](docs/phase-2-report.md)) for what was built and measured.
+**Status: Phase 7 of 8 (seed question bank) — done, awaiting review.** See the [Phase 7 report](docs/phase-7-report.md) (and [Phase 6](docs/phase-6-report.md), [Phase 5](docs/phase-5-report.md), [Phase 4](docs/phase-4-report.md), [Phase 3](docs/phase-3-report.md), [Phase 2](docs/phase-2-report.md)) for what was built and measured.
+
+**Seed bank**: 170 practice questions in 17 topic stacks (4 easy / 4 moderate / 2 hard each): 80 coding questions that work in all 8 languages, 30 web (HTML & CSS, DOM, React) and 60 data (SQL in PostgreSQL and MySQL, MongoDB, Pandas). CI validates every one in the real sandbox.
 
 **Reports**: an institution dashboard (activity, recent tests, questions that look too easy or too hard), test reports (score distribution, per-question and per-student results, CSV/Excel export, print to PDF), question, batch and student reports, *My progress* for students, a platform health page for the super admin, and an on-demand **code similarity check** per test with a side-by-side compare.
 
