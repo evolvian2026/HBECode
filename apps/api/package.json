@@ -27,7 +27,7 @@
     "argon2": "^0.45.1",
     "drizzle-orm": "^0.45.3",
     "fastify": "^5.12.1",
-    "ioredis": "^5.8.0",
+    "ioredis": "^6.0.0",
     "jose": "^6.2.12",
     "pg": "^8.23.1",
     "reflect-metadata": "^0.2.2",
