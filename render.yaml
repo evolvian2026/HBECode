@@ -20,6 +20,8 @@ services:
         value: 'true'
       - key: DATABASE_URL # Supabase pooler, role hbe_app (docs/deployment.md §2)
         sync: false
+      - key: DATABASE_CA_CERT # Supabase CA (PEM): verifies the database certificate (docs/deployment.md §2)
+        sync: false
       - key: DATABASE_POOL_SIZE
         value: '5'
       - key: UPLOAD_MAX_BYTES # 5 MB: the free instance has 512 MB of RAM in total (docs/deployment.md)

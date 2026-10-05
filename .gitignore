@@ -17,3 +17,9 @@ apps/web/tsconfig.tsbuildinfo
 
 dump.rdb
 *.rdb
+loadtest/.env.loadtest
+.terraform/
+*.tfstate
+*.tfstate.*
+*.tfvars
+!*.tfvars.example

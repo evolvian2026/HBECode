@@ -1,0 +1,6 @@
+domain             = "example.com"
+route53_zone_id    = "Z0123456789ABCDEFGHIJ"
+api_image_tag      = "<git-sha>"
+executor_image_tag = "<git-sha>"
+alarm_email        = "ops@example.com"
+# executor_schedule = { weekday_exams = { recurrence = "15 3 * * MON-FRI", min = 3, max = 8, desired = 3 } }

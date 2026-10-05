@@ -1,0 +1,90 @@
+name: Database backup
+# Nightly logical backup of the platform database, with a restore test on every run.
+#
+# Setup (once, see docs/runbooks.md#backups):
+#   - repository secret  BACKUP_DATABASE_URL   Supabase *session pooler* URL for role `postgres`
+#                                              (port 5432; the direct host is IPv6-only and
+#                                              transaction mode breaks pg_dump)
+#   - repository variable BACKUP_AGE_RECIPIENT age public key (age1…); keep the private key offline
+# Until both exist the job only prints a notice. This repository is public, so the dump is
+# encrypted before it is uploaded: the artifact is useless without the private key.
+on:
+  schedule:
+    - cron: '30 20 * * *' # 02:00 IST
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  backup:
+    runs-on: ubuntu-24.04
+    env:
+      BACKUP_DATABASE_URL: ${{ secrets.BACKUP_DATABASE_URL }}
+      AGE_RECIPIENT: ${{ vars.BACKUP_AGE_RECIPIENT }}
+    services:
+      restore:
+        image: postgres:17
+        env: { POSTGRES_PASSWORD: restore-test }
+        ports: ['5432:5432']
+        options: >-
+          --health-cmd "pg_isready -U postgres" --health-interval 2s --health-retries 30
+    steps:
+      - name: Not configured yet
+        if: env.BACKUP_DATABASE_URL == '' || env.AGE_RECIPIENT == ''
+        run: echo "::notice::Backups are not configured (BACKUP_DATABASE_URL secret and BACKUP_AGE_RECIPIENT variable). See docs/runbooks.md#backups."
+
+      - name: Dump (schema hbe + migration journal)
+        if: env.BACKUP_DATABASE_URL != '' && env.AGE_RECIPIENT != ''
+        run: |
+          set -euo pipefail
+          mkdir -p out
+          # pg_dump 17 reads servers 12–17. It turns row security off and fails loudly if RLS would
+          # hide rows, so a partial dump cannot pass silently (the `postgres` role bypasses RLS).
+          docker run --rm --network host -v "$PWD/out:/out" -e U="$BACKUP_DATABASE_URL" postgres:17 \
+            sh -c 'pg_dump "$U" --format=custom --schema=hbe --no-owner --file=/out/hbe.dump &&
+                   pg_dump "$U" --format=custom --table=public.hbe_schema_migrations --no-owner --file=/out/journal.dump'
+          ls -l out
+
+      - name: Restore test
+        if: env.BACKUP_DATABASE_URL != '' && env.AGE_RECIPIENT != ''
+        env:
+          PGPASSWORD: restore-test
+        run: |
+          set -euo pipefail
+          psql_() { docker run --rm --network host -e PGPASSWORD -v "$PWD/out:/out" postgres:17 psql -h 127.0.0.1 -U postgres -v ON_ERROR_STOP=1 "$@"; }
+          psql_ -c "CREATE ROLE hbe_app NOLOGIN NOBYPASSRLS" -c "CREATE EXTENSION citext" -c "CREATE EXTENSION pg_trgm"
+          # --no-owner at restore time (pg_dump ignores it for custom-format archives). Grants to
+          # roles that exist only on Supabase (anon, authenticated, …) fail harmlessly, so the run is
+          # judged by the checks below rather than by pg_restore's exit code.
+          docker run --rm --network host -e PGPASSWORD -v "$PWD/out:/out" postgres:17 sh -c \
+            'pg_restore -h 127.0.0.1 -U postgres -d postgres --no-owner /out/hbe.dump; pg_restore -h 127.0.0.1 -U postgres -d postgres --no-owner /out/journal.dump' 2> restore.err || true
+          { grep 'error:' restore.err || true; } | sort | uniq -c | head -20
+          psql_ -At -c "SELECT 'tenants='||count(*) FROM hbe.tenants" -c "SELECT 'users='||count(*) FROM hbe.users" \
+                    -c "SELECT 'questions='||count(*) FROM hbe.questions" -c "SELECT 'submissions='||count(*) FROM hbe.submissions" \
+                    -c "SELECT 'migrations='||count(*) FROM public.hbe_schema_migrations" \
+                    -c "SELECT 'unforced_rls='||count(*) FILTER (WHERE NOT relforcerowsecurity) FROM pg_class WHERE relnamespace='hbe'::regnamespace AND relkind='r'" \
+                    -c "SELECT 'app_grants='||has_table_privilege('hbe_app','hbe.users','SELECT')" | tee counts.txt
+          grep -q '^users=[1-9]' counts.txt || { echo "::error::restored backup has no users"; exit 1; }
+          grep -q '^migrations=[1-9]' counts.txt || { echo "::error::restored backup has no migration journal"; exit 1; }
+          grep -q '^unforced_rls=0$' counts.txt || { echo "::error::a restored table does not force row-level security"; exit 1; }
+          grep -q '^app_grants=true$' counts.txt || { echo "::error::hbe_app privileges were not restored"; exit 1; }
+          { echo '### Backup restore test'; echo '```'; cat counts.txt; echo '```'; } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Encrypt
+        if: env.BACKUP_DATABASE_URL != '' && env.AGE_RECIPIENT != ''
+        run: |
+          set -euo pipefail
+          sudo apt-get install -y -q age >/dev/null
+          stamp=$(date -u +%Y%m%dT%H%MZ)
+          tar -C out -cf - hbe.dump journal.dump | age -r "$AGE_RECIPIENT" -o "hbecode-$stamp.tar.age"
+          rm -rf out
+          echo "FILE=hbecode-$stamp.tar.age" >> "$GITHUB_ENV"
+
+      - uses: actions/upload-artifact@v4
+        if: env.BACKUP_DATABASE_URL != '' && env.AGE_RECIPIENT != ''
+        with:
+          name: ${{ env.FILE }}
+          path: ${{ env.FILE }}
+          retention-days: 30
+          if-no-files-found: error

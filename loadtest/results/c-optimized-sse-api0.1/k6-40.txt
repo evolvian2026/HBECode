@@ -1,0 +1,22 @@
+
+HBECode exam load test: 40 students, 360 s
+login (csrf + argon2id)            p50    978 ms  p95   2157 ms  max   2174 ms  n 42
+{name:attempt_view}                p50    201 ms  p95   1703 ms  max   1892 ms  n 40
+{name:drafts_get}                  p50     83 ms  p95    615 ms  max   1405 ms  n 40
+{name:draft}                       p50    208 ms  p95   2718 ms  max   5131 ms  n 1345
+{name:events}                      p50    186 ms  p95   3132 ms  max   4472 ms  n 825
+{name:finish}                      p50   1752 ms  p95   4018 ms  max   4706 ms  n 40
+{name:heartbeat}                   p50    182 ms  p95   2875 ms  max   4476 ms  n 893
+{name:live_monitor}                p50    300 ms  p95   1287 ms  max   1592 ms  n 41
+{name:login}                       p50    909 ms  p95   1996 ms  max   2101 ms  n 42
+{name:my_tests}                    p50    189 ms  p95    718 ms  max   1300 ms  n 40
+{name:question}                    p50    204 ms  p95   1137 ms  max   1601 ms  n 40
+{name:run}                         p50     95 ms  p95   2454 ms  max   3644 ms  n 128
+{name:sse}                         p50   1200 ms  p95  66601 ms  max  74311 ms  n 168
+{name:start_attempt}               p50    235 ms  p95   1697 ms  max   1802 ms  n 40
+{name:submit}                      p50   2154 ms  p95   4273 ms  max   4898 ms  n 40
+{name:test_report}                 p50    598 ms  p95    598 ms  max    598 ms  n 1
+Run → verdict                      p50    890 ms  p95   3671 ms  max   4901 ms  n 128
+Submit → verdict                   p50  49999 ms  p95  72655 ms  max  74312 ms  n 40
+http errors (student): 0.00 %   verdicts AC: 100.00 %   ws opened: 100.00 %
+time="2026-10-05T08:42:26Z" level=error msg="thresholds on metrics 'submit_to_verdict_ms' have been crossed"

@@ -1,0 +1,21 @@
+
+HBECode exam load test: 20 students, 360 s
+login (csrf + argon2id)            p50    542 ms  p95   1231 ms  max   1543 ms  n 22
+{name:attempt_view}                p50     91 ms  p95    221 ms  max    376 ms  n 20
+{name:drafts_get}                  p50     12 ms  p95    186 ms  max    285 ms  n 20
+{name:draft}                       p50     27 ms  p95   1293 ms  max   2759 ms  n 590
+{name:events}                      p50     22 ms  p95   1099 ms  max   2557 ms  n 353
+{name:finish}                      p50    752 ms  p95   2409 ms  max   2493 ms  n 20
+{name:heartbeat}                   p50     14 ms  p95   1136 ms  max   2488 ms  n 391
+{name:live_monitor}                p50     48 ms  p95    892 ms  max   2090 ms  n 42
+{name:login}                       p50    538 ms  p95   1187 ms  max   1493 ms  n 22
+{name:my_tests}                    p50     95 ms  p95    300 ms  max    306 ms  n 20
+{name:question}                    p50     97 ms  p95    192 ms  max    304 ms  n 20
+{name:run}                         p50     37 ms  p95    822 ms  max   1612 ms  n 70
+{name:sse}                         p50    877 ms  p95  14592 ms  max  16098 ms  n 90
+{name:start_attempt}               p50    101 ms  p95    306 ms  max    696 ms  n 20
+{name:submit}                      p50    711 ms  p95   2285 ms  max   2442 ms  n 20
+{name:test_report}                 p50     24 ms  p95     24 ms  max     24 ms  n 1
+Run → verdict                      p50    588 ms  p95   1700 ms  max   3807 ms  n 70
+Submit → verdict                   p50  12147 ms  p95  15887 ms  max  16098 ms  n 20
+http errors (student): 0.00 %   verdicts AC: 100.00 %   ws opened: 100.00 %

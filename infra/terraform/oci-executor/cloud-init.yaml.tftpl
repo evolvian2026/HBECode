@@ -1,0 +1,18 @@
+#cloud-config
+# Rendered by Terraform. Runs once on first boot: installs Docker, builds the executor image and
+# starts the executor + DB runners (deploy/oci/install-executor.sh). Progress: /var/log/hbe-install.log
+package_update: true
+write_files:
+  - path: /opt/hbe-install/install-executor.sh
+    permissions: '0700'
+    encoding: b64
+    content: ${base64encode(install_script)}
+%{ if executor_token != "" ~}
+  - path: /etc/hbe/executor.env
+    permissions: '0600'
+    content: |
+      HBE_API_URL=${api_url}
+      HBE_EXECUTOR_TOKEN=${executor_token}
+%{ endif ~}
+runcmd:
+  - [bash, -c, "until [ -f /etc/hbe/executor.env ]; do sleep 10; done; HBE_API_URL='${api_url}' HBE_EXECUTOR_ID='${executor_id}' HBE_EXECUTOR_SLOTS='${executor_slots}' HBE_REF='${git_ref}' /opt/hbe-install/install-executor.sh >> /var/log/hbe-install.log 2>&1"]

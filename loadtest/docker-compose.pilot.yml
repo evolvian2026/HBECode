@@ -1,0 +1,41 @@
+# Pilot-sized overlay for load testing: docker compose -f docker-compose.yml -f loadtest/docker-compose.pilot.yml up -d
+#
+# Mirrors the approved pilot (docs/architecture.md §15.3) on one 4-core box, one machine per CPU set:
+#   core 0     API (Render free: 0.1 CPU, 512 MB; override with API_CPUS), web, Redis (25 MB like Render Key Value)
+#   core 1     Postgres (stands in for Supabase free: shared CPU, 1 GB here) and the k6 load generator
+#   cores 2–3  executor + DB runners (Oracle A1: 2 OCPU), 2 executor slots as in docs/deployment.md
+# What it cannot mirror: India→Singapore network latency (add ~60–120 ms per request round trip),
+# ARM64 vs this x86 box, and noisy neighbours on shared free-tier hosts.
+services:
+  api:
+    cpus: ${API_CPUS:-0.1}
+    cpuset: '0'
+    mem_limit: 512m
+    environment:
+      NODE_ENV: production
+      COOKIE_SECURE: 'false' # plain http on localhost
+      DATABASE_POOL_SIZE: '5' # as in render.yaml
+      JWT_PRIVATE_KEY: ${JWT_PRIVATE_KEY:?generate with loadtest/run.sh}
+      MFA_ENCRYPTION_KEY: ${MFA_ENCRYPTION_KEY:?generate with loadtest/run.sh}
+      LOG_LEVEL: warn
+      # k6 signs every student in from one IP; the default (300 per 5 min) is meant for one lab NAT.
+      LOGIN_RATE_LIMIT_PER_IP: '100000'
+  web:
+    cpuset: '0'
+  redis:
+    cpuset: '0'
+    mem_limit: 64m
+    command: ['redis-server', '--appendonly', 'no', '--maxmemory', '25mb', '--maxmemory-policy', 'noeviction']
+  postgres:
+    cpuset: '1'
+    mem_limit: 1g
+  executor:
+    cpuset: '2,3'
+    environment:
+      EXECUTOR_SLOTS: ${EXECUTOR_SLOTS:-2}
+  runner-pg:
+    cpuset: '2,3'
+  runner-mysql:
+    cpuset: '2,3'
+  runner-mongo:
+    cpuset: '2,3'

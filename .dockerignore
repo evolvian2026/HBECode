@@ -5,3 +5,13 @@
 .git
 *.log
 .env
+.env.*
+!.env.example
+**/test-results
+**/playwright-report
+**/coverage
+**/.terraform
+**/*.tfstate*
+**/*.pem
+**/*.key
+docs

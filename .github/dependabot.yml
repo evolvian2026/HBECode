@@ -1,0 +1,17 @@
+# Weekly dependency updates. Base images are pinned by digest in the Dockerfiles; refresh those with
+# scripts/refresh-image-digests.sh (Dependabot cannot resolve the ${REGISTRY} build argument).
+version: 2
+updates:
+  - package-ecosystem: npm
+    directory: /
+    schedule: { interval: weekly }
+    open-pull-requests-limit: 5
+    groups:
+      minor-and-patch:
+        update-types: [minor, patch]
+  - package-ecosystem: github-actions
+    directory: /
+    schedule: { interval: weekly }
+  - package-ecosystem: terraform
+    directories: [/infra/terraform/oci-executor, /infra/terraform/aws/envs/prod]
+    schedule: { interval: monthly }

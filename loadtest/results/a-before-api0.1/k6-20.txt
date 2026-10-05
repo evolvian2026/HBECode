@@ -1,0 +1,26 @@
+time="2026-10-05T07:50:30Z" level=warning msg="Request Failed" error="Post \"http://localhost:4000/api/v1/attempts/f8e521eb-0980-4b0f-a1a5-0b5c71195a98/events\": EOF"
+time="2026-10-05T07:50:30Z" level=warning msg="FAILED events 0 EOF " source=console
+time="2026-10-05T07:53:25Z" level=warning msg="FAILED draft 403  {\"type\":\"about:blank\",\"title\":\"Forbidden\",\"status\":403,\"requestId\":\"a5a5b2dc-b665-46cd-9d98-cec3952b6d0c\"}" source=console
+time="2026-10-05T07:53:55Z" level=warning msg="FAILED draft 403  {\"type\":\"about:blank\",\"title\":\"Forbidden\",\"status\":403,\"requestId\":\"c130f750-b67e-4872-b65f-b415ce896c3f\"}" source=console
+
+HBECode exam load test: 20 students, 360 s
+login (csrf + argon2id)            p50    486 ms  p95   1459 ms  max   1569 ms  n 22
+{name:attempt_view}                p50    144 ms  p95    383 ms  max    396 ms  n 20
+{name:drafts_get}                  p50     84 ms  p95    112 ms  max    206 ms  n 20
+{name:draft}                       p50    853 ms  p95   5279 ms  max   7855 ms  n 683
+{name:events}                      p50    753 ms  p95   5345 ms  max   7350 ms  n 409
+{name:finish}                      p50   3897 ms  p95   5786 ms  max   7507 ms  n 20
+{name:heartbeat}                   p50    967 ms  p95   5352 ms  max   7574 ms  n 453
+{name:live_monitor}                p50    901 ms  p95   3037 ms  max   3605 ms  n 39
+{name:login}                       p50    481 ms  p95   1390 ms  max   1493 ms  n 22
+{name:my_tests}                    p50    112 ms  p95    627 ms  max   1231 ms  n 20
+{name:poll}                        p50   1403 ms  p95   3207 ms  max   3894 ms  n 634
+{name:question}                    p50    101 ms  p95    403 ms  max    485 ms  n 20
+{name:run}                         p50    687 ms  p95   4508 ms  max   6008 ms  n 68
+{name:start_attempt}               p50     99 ms  p95    506 ms  max    601 ms  n 20
+{name:submit}                      p50   4107 ms  p95   6413 ms  max   7467 ms  n 20
+{name:test_report}                 p50   1201 ms  p95   1201 ms  max   1201 ms  n 1
+Run → verdict                      p50   3693 ms  p95   9251 ms  max  13090 ms  n 68
+Submit → verdict                   p50  56295 ms  p95  66027 ms  max  68491 ms  n 20
+http errors (student): 0.12 %   verdicts AC: 100.00 %   ws opened: 100.00 %
+time="2026-10-05T07:54:43Z" level=error msg="thresholds on metrics 'submit_to_verdict_ms' have been crossed"
