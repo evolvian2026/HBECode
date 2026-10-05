@@ -1,4 +1,4 @@
-# HBECode — Threat Model & Security Checklist (Phase 1)
+# HBECode — Threat Model & Security Checklist (Phase 1, reviewed in Phase 8)
 
 > Status: **DRAFT.** Method: STRIDE per trust boundary. Companion to [`architecture.md`](./architecture.md).
 
@@ -126,22 +126,37 @@ Each item must end in a contained verdict (`RE`/`TLE`/`MLE`/`OLE`), with no host
 | R6 | A crafted submission makes the similarity check hang or exhaust memory | Runs in a worker thread off the event loop; inputs are bounded (one graded submission per student and question, submission size cap); common fingerprints dropped; one run per test at a time | Design review; the worker path is exercised by `reports.test.ts` and `reports.spec.ts` (no fuzzing yet) |
 | R7 | Rollups drift (wrong numbers presented as fact) | Daily rebuild from raw data; test asserts incremental == rebuilt | `reports.test.ts` (*equals a full rebuild*) |
 
+## 5e. Phase 8: deployment hardening and security review (as built and tested)
+
+| # | Threat | Mitigation | Verified by |
+|---|---|---|---|
+| H1 | **Memory/CPU exhaustion with oversized JSON bodies**, sent before authentication (bodies are parsed before Nest guards run) | Default JSON body limit 2 MB; 32 MB only for question create/update and executor results; executor routes check the bearer token in `onRequest`, before the body is read | `flow.test.ts` (*request size limits*: 413 on sign-in and drafts, 401 before parsing on executor routes, large question bodies still accepted) |
+| H2 | A route added without an access decision silently defaults to "any signed-in user" | Every handler must carry `@Public`, `@Internal`, `@Authenticated`, `@RequirePermission` or `@RequireRoles` | `rbac.test.ts` (*every route declares who may call it*, walks every registered route) |
+| H3 | **Database TLS without certificate verification** (MITM between Render and Supabase) | `DATABASE_CA_CERT` enables certificate + host-name verification; without it the API logs a warning at startup | `packages/db/test/tls.test.ts` |
+| H4 | Compromised or vulnerable base image / dependency | Base images pinned by digest (`scripts/refresh-image-digests.sh`); API/web on distroless (no shell, no package manager), uid 65532, files owned by root; CI fails on fixable HIGH/CRITICAL in the API/web images (Trivy) and on moderate+ production npm advisories; Dependabot for npm, Actions and Terraform | CI jobs *images*, *Lint, typecheck, unit tests* (audit step); `docker history` showed no secrets in any image |
+| H5 | Container breakout widening from writable image layers | Read-only root filesystems for API, web, migrate/seed and the executor (job directories on tmpfs); `cap_drop: ALL` + `no-new-privileges` for every Node service; memory and PID limits | Executor sandbox suite passes read-only (83/83, `harness.ts` flags = production flags); compose stack runs hardened (load test) |
+| H6 | Sandbox escape corpus only proven on x86_64 while the pilot executor is ARM64 | CI job *Sandbox escape suite (ARM64)* builds the image natively on `ubuntu-24.04-arm` and runs the full suite | CI |
+| H7 | Executor VM reachable from the internet | Terraform security list allows no inbound traffic (SSH only from `admin_cidr` if set); legacy IMDS off on OCI; IMDSv2 + hop limit 1 on AWS | `infra/terraform/oci-executor`, `infra/terraform/aws/modules/compute-exec` (`terraform validate` in CI) |
+| H8 | **Overload looks like a bug and is retried blindly**: database pool exhaustion surfaced as 500 | Pool acquisition timeout → `503 Service busy` with `Retry-After`; the web client retries idempotent GET/PUT once, never POSTs | `problem-filter.test.ts`; seen as 500s in the first 80-student load test, now 503 |
+| H9 | Data loss (free Supabase has no restorable backups for us) | Nightly `pg_dump` with a **restore test in the same job**, encrypted with age before upload (the repository is public) | `.github/workflows/backup.yml` (dormant until the secret and variable exist; see runbooks) |
+| H10 | JWT verification cache serves a revoked session | The cache holds only signature/claim checks of exact token strings until expiry; session revocation is checked in Redis on every request | `auth.test.ts` (*logout revokes the session immediately*, now using the token before logout so it is cached) |
+
 ## 6. Security checklist (gate for each phase)
 
-- [ ] All endpoints have an explicit permission decorator (CI check: an unannotated route fails the build)
-- [ ] RLS enabled **and forced** on every tenant table (CI query against `pg_class.relrowsecurity/relforcerowsecurity`)
-- [ ] Tenant-leak suite green
-- [ ] Student-facing response snapshots contain no hidden fields
-- [ ] Sandbox escape corpus green on x86_64 and ARM64
-- [ ] Rate limits on login, refresh, submissions, uploads, events, guest creation
-- [ ] CSP, HSTS (preload), `X-Content-Type-Options`, `Referrer-Policy`, `Permissions-Policy`, `frame-ancestors 'none'` (app), COOP/CORP
-- [ ] Cookies: `httpOnly`, `Secure`, `SameSite=Strict`. CSRF token on mutations.
-- [ ] Argon2id parameters benchmarked (< 250 ms on API host)
-- [ ] MFA enforced for Super Admin and Client Admin
-- [ ] Secrets only in env/secret manager. gitleaks clean. No secrets in images (`docker history` check).
-- [ ] Postgres/Redis bound to private interfaces only. Redis ACL users per service. TLS between hosts where crossing a network.
-- [ ] Backups encrypted, restore tested
-- [ ] Images: non-root, read-only root FS, `cap_drop: ALL`, healthcheck, pinned digest, Trivy has no HIGH/CRITICAL without a waiver
-- [ ] Audit log covers every create/update/delete, every permission change and every login
-- [ ] Data retention jobs implemented and tested per tenant setting
+- [x] All endpoints have an explicit permission decorator (CI check: an unannotated route fails the build) — `rbac.test.ts` (Phase 8)
+- [x] RLS enabled **and forced** on every tenant table (CI query against `pg_class.relrowsecurity/relforcerowsecurity`) — `packages/db/test/rls.test.ts`
+- [x] Tenant-leak suite green — `rls.test.ts`, `rbac.test.ts`, `reports-rls.test.ts` in CI
+- [x] Student-facing responses contain no hidden fields — `flow.test.ts`, `assessments.test.ts`, `web-db.test.ts`
+- [x] Sandbox escape corpus green on x86_64 (CI + dev box) and ARM64 (CI job added in Phase 8; see the Phase 8 report for its first result)
+- [x] Rate limits on login, refresh, submissions, uploads, events, guest creation (plus MFA, invites, drafts, heartbeats, attempt starts, exports, similarity runs)
+- [x] CSP, HSTS (preload), `X-Content-Type-Options`, `Referrer-Policy`, `Permissions-Policy`, `frame-ancestors 'none'` (app), COOP/CORP — API via helmet (checked with curl), app via `render.yaml` / CloudFront policy + `<meta>` CSP
+- [x] Cookies: `httpOnly`, `Secure`, `SameSite=Strict`. CSRF token on mutations.
+- [ ] Argon2id parameters benchmarked (< 250 ms on API host) — **not met on the free pilot API**: 19 MiB / t=2 (OWASP minimum) measured at 0.5–1.6 s per sign-in on 0.1 CPU (Phase 8 load test). Parameters are already at the minimum; accepted for the pilot, met on any paid instance.
+- [x] MFA enforced for Super Admin and Client Admin — `auth.test.ts`, `staff.spec.ts`
+- [x] Secrets only in env/secret manager. gitleaks clean. No secrets in images (`docker history` check, Phase 8).
+- [ ] Postgres/Redis bound to private interfaces only. Redis ACL users per service. TLS between hosts where crossing a network. — Pilot: Supabase is a public endpoint (password + TLS; verified with `DATABASE_CA_CERT`), Render Key Value is internal-only without ACL users. AWS target: private subnets, TLS + auth token. Partially met; accepted for the pilot.
+- [x] Backups encrypted, restore tested — nightly workflow restores every dump before keeping it (needs the one-time setup in runbooks.md)
+- [x] Images: non-root, read-only root FS, `cap_drop: ALL`, healthcheck, pinned digest, Trivy has no fixable HIGH/CRITICAL (API, web; enforced in CI). Executor: root inside the container by necessity (nsjail), read-only root FS, minimal capabilities; its Trivy scan is report-only (large toolchains) — waiver recorded in the Phase 8 report.
+- [x] Audit log covers every create/update/delete, every permission change and every login (upload discard added in Phase 8)
+- [x] Data retention jobs implemented and tested per tenant setting — snapshots (`assessments.test.ts`), upload files
 - [x] Proctoring disclaimer shown to admins (test editor, live monitor), and consent screen shown to students (Phase 4)

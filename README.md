@@ -4,7 +4,7 @@ A multi-tenant online coding assessment platform. Students write code in a brows
 secure sandbox against hidden tests, and get feedback in about a second. Institutions manage their
 own teachers, students and batches; teachers manage the question bank.
 
-**Status: Phase 7 of 8 (seed question bank) — done, awaiting review.** See the [Phase 7 report](docs/phase-7-report.md) (and [Phase 6](docs/phase-6-report.md), [Phase 5](docs/phase-5-report.md), [Phase 4](docs/phase-4-report.md), [Phase 3](docs/phase-3-report.md), [Phase 2](docs/phase-2-report.md)) for what was built and measured.
+**Status: Phase 8 of 8 (deployment, load testing, hardening) — done, awaiting review.** See the [Phase 8 report](docs/phase-8-report.md) (and [Phase 7](docs/phase-7-report.md), [Phase 6](docs/phase-6-report.md), [Phase 5](docs/phase-5-report.md), [Phase 4](docs/phase-4-report.md), [Phase 3](docs/phase-3-report.md), [Phase 2](docs/phase-2-report.md)) for what was built and measured.
 
 **Seed bank**: 170 practice questions in 17 topic stacks (4 easy / 4 moderate / 2 hard each): 80 coding questions that work in all 8 languages, 30 web (HTML & CSS, DOM, React) and 60 data (SQL in PostgreSQL and MySQL, MongoDB, Pandas). CI validates every one in the real sandbox.
 
@@ -21,18 +21,25 @@ Question types: **coding** (C, C++, Java, Python, JavaScript, Go, Rust, C#), **w
 | [Architecture](docs/architecture.md) | design, data model, sandbox, free-tier limits, AWS plan, decision log |
 | [Threat model](docs/threat-model.md) | STRIDE table, sandbox escape corpus, security checklist |
 | [Deployment](docs/deployment.md) | pilot on Render + Supabase + Oracle Cloud, step by step |
+| [Runbooks](docs/runbooks.md) | before a session, deploy/rollback, secret rotation, backups and restore, incidents |
+| [Load test](loadtest/README.md) | k6 exam scenario on a pilot-sized stack; results in the Phase 8 report |
+| [Terraform](infra/terraform/) | Oracle executor VM for the pilot; the AWS target architecture |
 | [Question format](docs/question-format.md) | Excel / Word / JSON import and export, every column |
 | [OpenAPI](docs/openapi.json) | generated from the same Zod schemas the API validates with |
 
-## Run it locally (about 10 minutes)
+## Run it locally (under 10 minutes with prebuilt images)
 
-Requirements: **Docker** with Compose v2 (Linux host, or Docker Desktop). That's all.
+Requirements: **Docker** with Compose v2 (Linux host, or Docker Desktop with ~8 GB of memory for Docker). That's all.
 
 ```bash
 git clone https://github.com/evolvian2026/HBECode.git && cd HBECode
-docker compose up --build -d          # first build ≈ 10–15 min (8 toolchains + Chromium + pandas)
-docker compose run --rm seed          # admin + demo users; queues the 7 seed questions for validation
+export HBE_IMAGE_PREFIX=ghcr.io/evolvian2026/hbecode- HBE_TAG=main   # prebuilt images (amd64 + arm64)
+docker compose pull                   # ~2 GB compressed, mostly the executor's 8 toolchains
+docker compose up -d
+docker compose run --rm seed          # admin + demo users; queues the 170 seed questions for validation
 ```
+
+**Or build everything yourself** (no registry needed): skip the `export` and `pull`, and run `docker compose up --build -d`. The first build takes about 15–25 minutes, mostly the executor image.
 
 Open http://localhost:3000 and sign in:
 
@@ -46,10 +53,9 @@ Open http://localhost:3000 and sign in:
 | Super admin (MFA enrolment forced) | `admin@hbecode.local` | `admin-password-dev-1` |
 
 These are development defaults. Change them in `.env` (see `.env.example`) and never reuse them anywhere real.
-The seed questions appear in Practice once the executor has validated them (about a minute after `seed`):
-*Sum of an Array* (coding, 8 languages), *Responsive Profile Card* (HTML/CSS), *To-do List with Vanilla
-JavaScript*, *React Shopping Cart*, *Top Earner per Department* (PostgreSQL + MySQL), *Paid Order Totals by
-Customer* (MongoDB) and *Monthly Revenue by Region* (Pandas).
+The seed questions appear in Practice as the local executor validates them: *Sum of an Array* about a minute after `up`, all 170 after about 9 minutes (2 executor slots; measured). Everything works while the rest validates.
+
+**Measured** on a 4-core dev box (Phase 8): clone 1 s; `up` until API and web answer 15 s; `seed` 37 s; first question usable 53 s after `up`. The ~2 GB download is the variable part: about 1 minute on a fast link, ~3 minutes at 100 Mbit/s, ~6–7 minutes at 50 Mbit/s.
 
 If ports 5432 or 6379 are already in use on your machine, set `PG_HOST_PORT` / `REDIS_HOST_PORT` (for
 example `PG_HOST_PORT=15432 docker compose up -d`). The DB-question runner containers publish no ports.

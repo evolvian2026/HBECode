@@ -700,6 +700,7 @@ flowchart TB
 | Code execution | Oracle Always Free A1 VM (Ubuntu 24.04, cgroup v2) | Render cannot run nsjail on any plan. The executor **pulls jobs from the API over HTTPS** with a per-executor token. It holds no DB or Redis credentials. |
 | Domain | `app.<domain>` and `api.<domain>` (DNS on AWS Route 53) | Must be the same registrable domain so `SameSite=Strict` cookies work. `*.onrender.com` is on the Public Suffix List, so the default Render URLs count as cross-site. |
 | T-SQL | **Postponed** (decision Q1) | |
+| **Measured capacity** (Phase 8) | 10 students comfortable; 20 work with a 12–16 s wait for final grades in the end-of-test burst; a 0.5-CPU API (Render Starter) handles 40 with everything under 5 s | [Phase 8 report](./phase-8-report.md#load-test-results). The 0.1-CPU API is the bottleneck, not the executor, until ~80 students. |
 
 ### 15.4 Design changes made during Phase 2 (decision log)
 
@@ -790,6 +791,21 @@ flowchart TB
 | SQL bank questions avoid behaviour that differs between PostgreSQL and MySQL (NULL ordering, case-sensitive comparison, `LEAST`/`GREATEST` with NULLs, integer vs decimal division, DATE output, reserved words such as `rank` and `change`). | The validator requires both dialects to return the same result on every dataset. |
 | **JIT is off for the PostgreSQL sandbox role** (`ALTER ROLE … SET jit = off`). | A recursive CTE over five rows took 3.3 s instead of 1 ms because the planner's cost estimate for unanalysed tables triggered JIT compilation, which students would have seen as a time-limit failure. |
 | **PostgreSQL template databases are evicted least-recently-used**: each executor keeps at most `PG_TEMPLATE_CACHE` (default 16). A template being copied is never dropped. A run whose template was dropped by another executor rebuilds it once. | Each database costs ~7.5 MB of the runner's tmpfs-backed 512 MB. Without a cap, validating the 600 SQL datasets OOM-killed the runner on a fresh stack. |
+
+### 15.10 Design changes made during Phase 8 (decision log)
+
+| Change | Reason |
+|---|---|
+| **API and web images are distroless** (`gcr.io/distroless/nodejs22-debian12:nonroot`): no shell, no package manager, uid 65532, application files owned by root; every base image is **pinned by digest** and refreshed with `scripts/refresh-image-digests.sh`. | Smaller attack surface (API image 413 → 291 MB, web 362 → 240 MB) and reproducible builds; the running process cannot modify its own code. |
+| **Read-only root filesystems** everywhere, including the executor (job directories on a 2 GB tmpfs mounted `exec`). The test harness uses the production flags. | The sandbox suite (83 tests) passes unchanged, so there is no reason to leave the image writable. |
+| **Executor healthcheck = heartbeat file** touched after every answered claim or finished job (unhealthy after 3 minutes without one). | The old check (`test -x nsjail`) stayed green while an agent could not reach the API. |
+| **JSON bodies capped at 2 MB** by default (32 MB only for question authoring and executor results); executor routes check their bearer token before the body is read. | Bodies are parsed before Nest guards run; 32 MB everywhere let anonymous clients make a 512 MB instance parse large payloads. |
+| **The API must not import the seed bank.** Upload templates use `@hbe/db/seed/examples` (7 hand-written questions). A test fails if a server module imports `@hbe/db/seed`. | Generating 170 questions at import cost ~9 CPU-seconds: the API took **3.5 minutes to start on 0.1 CPU** (12.5 s on a full core). Now 1.6 s on a full core, ~45 s from `up` on 0.1 CPU. |
+| Verified access tokens are **cached until expiry** (bounded map, exact token string as key; revocation still checked per request); the public key is a `CryptoKey` imported once. Rate-limit hits are one Lua script call. Drizzle is created without a schema (no per-transaction relational helpers). | Per-request CPU profile of the pilot-sized API; see the Phase 8 report for the measured effect. |
+| **Database pool exhaustion → 503 + `Retry-After`**; the web client retries idempotent GET/PUT once. | Under overload (80 students on 0.1 CPU) the API answered 500, which looks like a bug and was not retried. |
+| **`DATABASE_CA_CERT`** turns on certificate and host-name verification for Postgres TLS. | `sslmode=require` encrypted the connection but accepted any certificate. |
+| Every route declares its access with a decorator; `@Authenticated()` names the "any signed-in user" case explicitly. A test walks all registered routes. | Checklist item from the Phase 1 threat model; seven routes relied on the default. |
+| **Backups: nightly `pg_dump` in GitHub Actions with a restore test in the same job, encrypted with age**; Terraform for the pilot executor (OCI) and the AWS target; k6 load test with a pilot-sized compose overlay. | Supabase free gives us no restorable backups; Phase 8 deliverables (IaC, measured capacity). |
 
 ## 16. AWS target architecture and migration
 

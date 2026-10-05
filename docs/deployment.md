@@ -33,6 +33,7 @@ Keep them in a password manager. Never commit them. `.env*` files are git-ignore
 3. Copy two connection strings from Project Settings → Database:
    - **Direct / session** connection as `postgres`. This is `DATABASE_ADMIN_URL`, used for migrations only, and must include `?sslmode=require`.
    - **Transaction pooler** (port 6543). This is the template for the app's `DATABASE_URL`. Replace the user with `hbe_app.<project-ref>` and the password with `HBE_APP_DB_PASSWORD`, and add `?sslmode=require`.
+   - **The CA certificate:** Project Settings → Database → SSL configuration → *Download certificate*. Its PEM text becomes `DATABASE_CA_CERT` on Render (step 3). With it, the API verifies the database's certificate and host name. Without it, the connection is encrypted but not verified, and the API logs a warning at startup.
 4. Run the migrations. Either:
    - add repository secrets `DATABASE_ADMIN_URL` and `HBE_APP_DB_PASSWORD`, then run **Actions → Migrate database**; or
    - run it locally: `DATABASE_ADMIN_URL=... HBE_APP_DB_PASSWORD=... pnpm db:migrate`.
@@ -45,7 +46,7 @@ Keep them in a password manager. Never commit them. `.env*` files are git-ignore
 
 1. Render → **New → Blueprint** → choose this repository → it reads `render.yaml` and proposes `hbe-api`, `hbe-web` and `hbe-kv`.
 2. Fill in the secrets it asks for:
-   - `hbe-api`: `DATABASE_URL` (step 2.3), `JWT_PRIVATE_KEY`, `MFA_ENCRYPTION_KEY`, `EXECUTOR_TOKENS`, `WEB_ORIGINS=https://app.<domain>`, `WEB_URL=https://app.<domain>`
+   - `hbe-api`: `DATABASE_URL` (step 2.3), `DATABASE_CA_CERT` (step 2.3, the whole PEM), `JWT_PRIVATE_KEY`, `MFA_ENCRYPTION_KEY`, `EXECUTOR_TOKENS`, `WEB_ORIGINS=https://app.<domain>`, `WEB_URL=https://app.<domain>`
    - `hbe-web`: `NEXT_PUBLIC_API_URL=https://api.<domain>`
 3. **Custom domains (required).** Add `api.<domain>` to `hbe-api` and `app.<domain>` to `hbe-web`. In **AWS Route 53**, create the CNAME records Render shows you, then wait for the TLS certificates.
    Both must sit under the same registrable domain: session cookies are `SameSite=Strict`, and `*.onrender.com` counts as cross-site.
@@ -65,7 +66,7 @@ Keep them in a password manager. Never commit them. `.env*` files are git-ignore
 
 > **Seed bank (Phase 7).** Optional executor setting: `PG_TEMPLATE_CACHE` (default 16) is the number of PostgreSQL template databases (one per SQL dataset) each executor keeps on the runner. Each costs about 7.5 MB of the runner's 512 MB, because its data is on tmpfs. Lower it if `runner-pg` is ever OOM-killed (`docker inspect runner-pg --format '{{.State.OOMKilled}}'`). To re-validate the bank yourself (local Postgres + Redis and the executor image, like CI): `pnpm --filter @hbe/api build && BANK_SLOTS=4 pnpm --filter @hbe/api test:bank`; `BANK_STACKS=sql-joins,pandas` limits it to some stacks, and results go to `/tmp/hbe-seed-bank.json`.
 
-> **Free plan limits:** the API sleeps after 15 minutes idle and takes about a minute to wake. **Open the site a few minutes before each session.** The free Key Value store is not persistent, but that's fine: Postgres is the source of truth and the sweeper re-queues any submission that was in flight.
+> **Free plan limits:** the API sleeps after 15 minutes idle and takes about a minute to wake (our part of that is ~45 s on 0.1 CPU, measured). **Open the site a few minutes before each session.** Measured capacity of the free API: 10 students comfortable, 20 workable (final grades take 12–16 s at the end of a test); for more, see the [Phase 8 report](./phase-8-report.md#load-test-results) and the [runbooks](./runbooks.md). The free Key Value store is not persistent, but that's fine: Postgres is the source of truth and the sweeper re-queues any submission that was in flight.
 
 ## 4. Oracle Cloud executor VM {#executor}
 
@@ -80,44 +81,23 @@ Keep them in a password manager. Never commit them. `.env*` files are git-ignore
      - After the VM is up, confirm Ubuntu sees the full size: `df -h /` should show about 95 GB. If it shows less, run `sudo growpart /dev/sda 1 && sudo resize2fs /dev/sda1` (Ubuntu images on Oracle normally do this automatically on first boot).
    - Networking: the default VCN is fine. **Allow no inbound ports except 22**: the executor only makes outbound HTTPS calls to the API.
    If you get "Out of capacity", retry later or pick another availability domain.
-2. On the VM:
+2. On the VM, run the install script. It installs Docker, builds the executor image (about 15 minutes on A1, native ARM64), starts the three database runners on an internal network and starts the executor with the hardened flags. It is idempotent: re-run it to update.
    ```bash
-   sudo apt-get update && sudo apt-get install -y docker.io git
-   sudo systemctl enable --now docker
-   git clone https://github.com/evolvian2026/HBECode.git && cd HBECode
-   sudo docker build -f apps/executor/Dockerfile -t hbe-executor .      # ~15 min on A1, native ARM64
-
-   # Database runners for DB questions (PostgreSQL, MySQL, MongoDB). They live on an internal
-   # Docker network: no published ports, no internet, reachable only from the executor.
-   # Data is on tmpfs, so nothing survives a restart (none is needed).
-   RPG=$(openssl rand -hex 16); RMY=$(openssl rand -hex 16); RMO=$(openssl rand -hex 16)
-   sudo docker network create --internal hbe-runners
-   sudo docker run -d --name runner-pg --network hbe-runners --restart unless-stopped --memory 512m \
-     --security-opt no-new-privileges --tmpfs /var/lib/postgresql/data \
-     -e POSTGRES_USER=runner_admin -e POSTGRES_PASSWORD=$RPG postgres:16-alpine
-   sudo docker run -d --name runner-mysql --network hbe-runners --restart unless-stopped --memory 768m \
-     --security-opt no-new-privileges --tmpfs /var/lib/mysql \
-     -e MYSQL_ROOT_PASSWORD=$RMY mysql:8.4 \
-     --local-infile=0 --secure-file-priv=NULL --skip-name-resolve --performance-schema=0 --innodb-buffer-pool-size=64M --max-connections=100
-   sudo docker run -d --name runner-mongo --network hbe-runners --restart unless-stopped --memory 512m \
-     --security-opt no-new-privileges --tmpfs /data/db \
-     -e MONGO_INITDB_ROOT_USERNAME=root -e MONGO_INITDB_ROOT_PASSWORD=$RMO mongo:8.0 --noscripting --wiredTigerCacheSizeGB 0.25
-
-   sudo docker run -d --name hbe-executor --restart unless-stopped \
-     --cap-drop ALL --cap-add SYS_ADMIN --cap-add SETUID --cap-add SETGID --cap-add CHOWN \
-     --cap-add DAC_OVERRIDE --cap-add FOWNER --cap-add KILL \
-     --security-opt seccomp=unconfined --security-opt apparmor=unconfined --security-opt systempaths=unconfined \
-     --cgroupns private \
-     -e EXECUTOR_API_URL=https://api.<domain> -e EXECUTOR_TOKEN='<EXECUTOR_TOKEN>' \
-     -e EXECUTOR_ID=oci-sg-1 -e EXECUTOR_SLOTS=2 \
-     -e PG_RUNNER_URL=postgres://runner_admin:$RPG@runner-pg:5432/postgres \
-     -e MYSQL_RUNNER_URL=mysql://root:$RMY@runner-mysql:3306 \
-     -e "MONGO_RUNNER_URL=mongodb://root:$RMO@runner-mongo:27017/?authSource=admin" \
-     hbe-executor
-   sudo docker network connect hbe-runners hbe-executor   # executor: internet (API) + runners
-   sudo docker logs -f hbe-executor     # expect "executor starting" listing 8 runtimes, web:html, web:react and db:*
+   # The token goes into a root-only file, never into shell history or the command line.
+   sudo install -d -m 0700 /etc/hbe
+   sudo sh -c 'umask 077; cat > /etc/hbe/executor.env' <<'EOF'
+   HBE_API_URL=https://api.<domain>
+   HBE_EXECUTOR_TOKEN=<EXECUTOR_TOKEN from step 1>
+   EOF
+   curl -fsSLO https://raw.githubusercontent.com/evolvian2026/HBECode/main/deploy/oci/install-executor.sh
+   sudo HBE_EXECUTOR_ID=oci-sg-1 HBE_REF=main bash install-executor.sh
+   sudo docker logs -f hbe-executor     # expect "executor starting" listing 8 runtimes, web:html, web:react and db:*, then "warm-up ok"
    ```
-   The runner passwords exist only in these containers' environment; the API never sees them. If the executor restarts before the runners are ready, it simply retries (`restart unless-stopped`).
+   What it runs is in [`deploy/oci/install-executor.sh`](../deploy/oci/install-executor.sh): the runner passwords are generated on the VM and kept in `/etc/hbe/runners.env` (root only); the API never sees them. The executor's root filesystem is read-only and job directories live on tmpfs. Docker logs are capped at 5 × 20 MB per container.
+
+   **Or with Terraform:** [`infra/terraform/oci-executor`](../infra/terraform/oci-executor/README.md) creates the network (no inbound ports), the VM and runs the same script through cloud-init.
+
+   **Updating the executor later:** `sudo HBE_REF=<tag or branch> bash install-executor.sh`. To roll back, run it with the previous ref.
 3. **Why these flags:** nsjail needs `CAP_SYS_ADMIN` and a writable cgroup tree to build each sandbox. `--cgroupns private` keeps the executor inside its own cgroup subtree. **Never mount the host's `/sys/fs/cgroup`:** the agent refuses to start if it can see processes outside its container. With these privileges the container itself is a weak boundary. **The VM must run nothing else.** The security boundary is nsjail around every submission: user/PID/mount/network namespaces, uid 65534, seccomp, cgroups and a read-only root filesystem. It is exercised by `pnpm --filter @hbe/executor test:sandbox`. The VM holds no platform database or Redis credentials, only the executor token and the passwords of its own throwaway runner databases. Student SQL runs as a per-run database user that can see only that run's database (MongoDB: a per-run user with the `read` role); web submissions run in headless Chromium inside the same nsjail sandbox, with no network.
 
 > ⚠️ Not yet verified: the sandbox suite passed on an x86_64 / cgroup v1 host. Oracle A1 is ARM64 with cgroup v2. CI (GitHub's Ubuntu 24.04 runners, cgroup v2) covers the cgroup v2 path; ARM64 has not run yet. **After step 2, run the sandbox suite on the VM once**:
