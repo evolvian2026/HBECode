@@ -13,6 +13,10 @@
     "./seed": {
       "types": "./dist/seed/index.d.ts",
       "default": "./dist/seed/index.js"
+    },
+    "./seed/examples": {
+      "types": "./dist/seed/examples.d.ts",
+      "default": "./dist/seed/examples.js"
     }
   },
   "scripts": {

@@ -175,6 +175,21 @@ describe('student view and submissions', () => {
   });
 });
 
+describe('request size limits', () => {
+  const pad = 'x'.repeat(3 * 1024 * 1024);
+  it('JSON bodies over 2 MB are refused (413), even on the sign-in route', async () => {
+    expect((await new Client(t).post('/api/v1/auth/login', { email: 'nobody@alpha.edu', password: pad })).statusCode).toBe(413);
+    expect((await student.put(`/api/v1/drafts/00000000-0000-0000-0000-000000000000/python`, { code: pad })).statusCode).toBe(413);
+  });
+  it('executor routes refuse a request without a valid token before reading its body', async () => {
+    const r = await t.app.inject({ method: 'POST', url: '/api/v1/internal/executor/claim', payload: { pad } });
+    expect(r.statusCode).toBe(401);
+  });
+  it('question authoring still accepts large bodies (big stress tests): validated, not refused for size', async () => {
+    expect((await teacher.post('/api/v1/questions', { title: 'too big?', pad })).statusCode).toBe(400);
+  });
+});
+
 describe('executor boundary', () => {
   it('rejects executor calls without the bearer token, even with a browser session', async () => {
     const r = await teacher.post('/api/v1/internal/executor/claim', { executorId: 'x', runtimes: ['c'] });

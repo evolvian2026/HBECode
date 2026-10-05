@@ -4,7 +4,7 @@ import { refreshTokens, type Tx } from '@hbe/db';
 import { ROLES, type Role } from '@hbe/shared';
 import { and, eq, isNull } from 'drizzle-orm';
 import type { Redis } from 'ioredis';
-import { importPKCS8, jwtVerify, SignJWT, type CryptoKey, type KeyObject } from 'jose';
+import { importPKCS8, importSPKI, jwtVerify, SignJWT, type CryptoKey, type KeyObject } from 'jose';
 import { createPublicKey, createPrivateKey } from 'node:crypto';
 import { CONFIG, type AppConfig } from '../config.js';
 import { randomToken, sha256 } from '../common/crypto.js';
@@ -24,7 +24,15 @@ export interface AccessClaims {
 export class TokenService implements OnModuleInit {
   private readonly log = new Logger('TokenService');
   private privateKey!: CryptoKey | KeyObject;
-  private publicKey!: KeyObject;
+  private publicKey!: CryptoKey;
+  /**
+   * Access tokens whose signature was already verified, until they expire. ES256 verification was
+   * the largest single CPU cost per request in the Phase 8 load test (every request carries the
+   * cookie). The key is the exact token string, so nothing unverified can be served from it;
+   * revocation is still checked in Redis on every request.
+   */
+  private readonly verified = new Map<string, { claims: AccessClaims; exp: number }>();
+  private static readonly VERIFIED_MAX = 10_000;
 
   constructor(
     @Inject(CONFIG) private readonly cfg: AppConfig,
@@ -38,7 +46,8 @@ export class TokenService implements OnModuleInit {
       pem = generateKeyPairSync('ec', { namedCurve: 'P-256' }).privateKey.export({ type: 'pkcs8', format: 'pem' }).toString();
     }
     this.privateKey = await importPKCS8(pem, 'ES256');
-    this.publicKey = createPublicKey(createPrivateKey(pem));
+    // A CryptoKey once, instead of handing jose a KeyObject to convert on every verification.
+    this.publicKey = await importSPKI(createPublicKey(createPrivateKey(pem)).export({ type: 'spki', format: 'pem' }).toString(), 'ES256');
   }
 
   signAccess(c: AccessClaims): Promise<string> {
@@ -53,19 +62,33 @@ export class TokenService implements OnModuleInit {
   }
 
   async verifyAccess(token: string): Promise<AuthUser | null> {
+    const claims = await this.accessClaims(token);
+    if (!claims) return null;
+    if (await this.redis.exists(`revoked-sid:${claims.sid}`)) return null;
+    return { id: claims.sub, role: claims.role, tenantId: claims.tid, sessionId: claims.sid, mfa: claims.mfa, mfaSetupRequired: claims.msr };
+  }
+
+  /** Signature, issuer, audience, expiry and claim shape; cached per token until it expires. */
+  private async accessClaims(token: string): Promise<AccessClaims | null> {
+    const hit = this.verified.get(token);
+    if (hit) {
+      if (hit.exp > Date.now()) return hit.claims;
+      this.verified.delete(token);
+    }
     try {
       const { payload } = await jwtVerify(token, this.publicKey, { issuer: this.cfg.JWT_ISSUER, audience: 'hbe-api', algorithms: ['ES256'] });
-      if (payload.typ !== 'access' || typeof payload.sub !== 'string' || !ROLES.includes(payload.role as Role)) return null;
-      const sid = String(payload.sid);
-      if (await this.redis.exists(`revoked-sid:${sid}`)) return null;
-      return {
-        id: payload.sub,
+      if (payload.typ !== 'access' || typeof payload.sub !== 'string' || !ROLES.includes(payload.role as Role) || typeof payload.exp !== 'number') return null;
+      const claims: AccessClaims = {
+        sub: payload.sub,
         role: payload.role as Role,
-        tenantId: (payload.tid as string | null) ?? null,
-        sessionId: sid,
+        tid: (payload.tid as string | null) ?? null,
+        sid: String(payload.sid),
         mfa: payload.mfa === true,
-        mfaSetupRequired: payload.msr === true,
+        msr: payload.msr === true,
       };
+      if (this.verified.size >= TokenService.VERIFIED_MAX) this.verified.delete(this.verified.keys().next().value!);
+      this.verified.set(token, { claims, exp: payload.exp * 1000 });
+      return claims;
     } catch {
       return null;
     }

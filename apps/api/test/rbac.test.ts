@@ -110,3 +110,29 @@ describe('audit log', () => {
     }
   });
 });
+
+describe('every route declares who may call it', () => {
+  it('each handler has @Public, @Internal, @Authenticated, @RequirePermission or @RequireRoles (no silent defaults)', async () => {
+    const { ModulesContainer } = await import('@nestjs/core');
+    const { METHOD_METADATA, PATH_METADATA } = await import('@nestjs/common/constants.js');
+    const { AUTHENTICATED, INTERNAL, PERMISSION, PUBLIC, ROLES_META } = await import('../src/common/decorators.js');
+    const keys = [PUBLIC, INTERNAL, AUTHENTICATED, PERMISSION, ROLES_META];
+    const missing: string[] = [];
+    let routes = 0;
+    for (const mod of t.app.get(ModulesContainer).values()) {
+      for (const wrapper of mod.controllers.values()) {
+        const cls = wrapper.metatype as (new (...a: unknown[]) => unknown) | undefined;
+        if (!cls) continue;
+        for (const name of Object.getOwnPropertyNames(cls.prototype)) {
+          const handler = (cls.prototype as Record<string, unknown>)[name];
+          if (name === 'constructor' || typeof handler !== 'function' || Reflect.getMetadata(METHOD_METADATA, handler) === undefined) continue;
+          routes++;
+          const declared = keys.some((k) => Reflect.getMetadata(k, handler) !== undefined || Reflect.getMetadata(k, cls) !== undefined);
+          if (!declared) missing.push(`${cls.name}.${name} (${String(Reflect.getMetadata(PATH_METADATA, handler))})`);
+        }
+      }
+    }
+    expect(routes).toBeGreaterThan(80);
+    expect(missing).toEqual([]);
+  });
+});

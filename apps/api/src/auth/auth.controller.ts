@@ -5,7 +5,7 @@ import type { z } from 'zod';
 import { CONFIG, type AppConfig } from '../config.js';
 import { clearSessionCookies, CSRF_COOKIE, REFRESH_COOKIE, setSessionCookies } from '../common/cookies.js';
 import { randomToken } from '../common/crypto.js';
-import { AllowDuringMfaSetup, CurrentUser, Meta, Public, type AuthUser, type RequestMeta } from '../common/decorators.js';
+import { AllowDuringMfaSetup, Authenticated, CurrentUser, Meta, Public, type AuthUser, type RequestMeta } from '../common/decorators.js';
 import { zp } from '../common/zod.pipe.js';
 import { AuthService, type IssuedSession } from './auth.service.js';
 
@@ -81,11 +81,13 @@ export class AuthController {
   }
 
   @AllowDuringMfaSetup()
+  @Authenticated()
   @Get('me')
   me(@CurrentUser() u: AuthUser) {
     return this.auth.me(u);
   }
 
+  @Authenticated()
   @Post('switch-tenant')
   @HttpCode(200)
   async switchTenant(@CurrentUser() u: AuthUser, @Body(zp(SwitchTenantRequest)) body: z.infer<typeof SwitchTenantRequest>, @Meta() meta: RequestMeta, @Res({ passthrough: true }) reply: FastifyReply) {
@@ -93,6 +95,7 @@ export class AuthController {
   }
 
   @AllowDuringMfaSetup()
+  @Authenticated()
   @Post('password')
   @HttpCode(200)
   async changePassword(@CurrentUser() u: AuthUser, @Body(zp(ChangePasswordRequest)) body: z.infer<typeof ChangePasswordRequest>, @Meta() meta: RequestMeta, @Res({ passthrough: true }) reply: FastifyReply) {
@@ -100,6 +103,7 @@ export class AuthController {
   }
 
   @AllowDuringMfaSetup()
+  @Authenticated()
   @Post('mfa/setup')
   @HttpCode(200)
   mfaSetup(@CurrentUser() u: AuthUser) {
@@ -107,6 +111,7 @@ export class AuthController {
   }
 
   @AllowDuringMfaSetup()
+  @Authenticated()
   @Post('mfa/enable')
   @HttpCode(200)
   async mfaEnable(@CurrentUser() u: AuthUser, @Body(zp(MfaEnableRequest)) body: z.infer<typeof MfaEnableRequest>, @Meta() meta: RequestMeta, @Res({ passthrough: true }) reply: FastifyReply) {

@@ -3,7 +3,7 @@ import { ATTEMPT_TOKEN_HEADER, CreateSubmissionRequest, DRAFT_KEYS, SaveDraftReq
 import type { FastifyReply, FastifyRequest } from 'fastify';
 import { z } from 'zod';
 import { CONFIG, type AppConfig } from '../config.js';
-import { CurrentUser, RequirePermission, type AuthUser } from '../common/decorators.js';
+import { Authenticated, CurrentUser, RequirePermission, type AuthUser } from '../common/decorators.js';
 import { zp } from '../common/zod.pipe.js';
 import { DispatchService } from '../executor/dispatch.service.js';
 import { SubmissionsService } from './submissions.service.js';
@@ -31,6 +31,7 @@ export class SubmissionsController {
     return this.subs.list(u, q.questionId);
   }
 
+  @Authenticated()
   @Get('submissions/:id')
   get(@CurrentUser() u: AuthUser, @Param('id', ParseUUIDPipe) id: string) {
     return this.subs.get(u, id);
@@ -40,6 +41,7 @@ export class SubmissionsController {
    * Server-Sent Events: pushes the (viewer-filtered) submission on every status change and
    * closes when it finishes. Clients fall back to polling GET /submissions/:id.
    */
+  @Authenticated()
   @Get('submissions/:id/events')
   async events(@CurrentUser() u: AuthUser, @Param('id', ParseUUIDPipe) id: string, @Req() req: FastifyRequest, @Res() reply: FastifyReply) {
     const first = await this.subs.get(u, id); // authorises (404 if not visible)

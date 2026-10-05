@@ -13,6 +13,8 @@ export const DOCKER_FLAGS = [
   '--security-opt', 'seccomp=unconfined', '--security-opt', 'apparmor=unconfined', '--security-opt', 'systempaths=unconfined',
   // Own cgroup namespace; the agent remounts its (container-scoped) cgroup tree read-write.
   '--cgroupns', 'private',
+  // Read-only image, as in production; job directories on tmpfs (exec: compiled programs run there).
+  '--read-only', '--tmpfs', '/var/lib/hbe-exec:exec,size=2g,mode=0711', '--tmpfs', '/tmp:size=256m',
 ];
 
 /** DB runner servers as in production: no published ports, reachable only on a private network. */

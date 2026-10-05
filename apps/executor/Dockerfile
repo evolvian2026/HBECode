@@ -3,17 +3,18 @@
 # Build from the repo root:  docker build -f apps/executor/Dockerfile -t hbe-executor .
 # REGISTRY defaults to Google's Docker Hub mirror to avoid anonymous pull rate limits.
 ARG REGISTRY=mirror.gcr.io/library
+# Base images are pinned by digest (multi-arch index digests); refresh with scripts/refresh-image-digests.sh.
 ARG NSJAIL_REF=3.6
 
-FROM ${REGISTRY}/golang:1.24-bookworm AS go
-FROM ${REGISTRY}/rust:1.90-slim-bookworm AS rust
-FROM mcr.microsoft.com/dotnet/sdk:8.0 AS dotnet
-FROM ${REGISTRY}/node:22-bookworm-slim AS node
+FROM ${REGISTRY}/golang:1.24-bookworm@sha256:1a6d4452c65dea36aac2e2d606b01b4a029ec90cc1ae53890540ce6173ea77ac AS go
+FROM ${REGISTRY}/rust:1.90-slim-bookworm@sha256:64232e656c058f4468e8d024e990acff04f0fd5a5c0a88a574dc37773d7325c9 AS rust
+FROM mcr.microsoft.com/dotnet/sdk:8.0@sha256:78235e09001f52b6592c458ac010775ebac6725422e80cd0c1650590f67b2743 AS dotnet
+FROM ${REGISTRY}/node:22-bookworm-slim@sha256:43ac6c60b8f89723f746e8a92ce91abd5017e627ce1ddfe4238355d3a30b772c AS node
 # Chromium headless shell matching playwright-core 1.56.1 (multi-arch image).
-FROM mcr.microsoft.com/playwright:v1.56.1-noble AS playwright
+FROM mcr.microsoft.com/playwright:v1.56.1-noble@sha256:f1e7e01021efd65dd1a2c56064be399f3e4de00fd021ac561325f2bfbb2b837a AS playwright
 
 # ---- nsjail + hbe-run ----------------------------------------------------------------
-FROM ${REGISTRY}/ubuntu:24.04 AS nsjail
+FROM ${REGISTRY}/ubuntu:24.04@sha256:534baea6a22c03a63003dbc8dbe78fe34bc0d7e595d9a9dc9834884ff530eb55 AS nsjail
 ARG NSJAIL_REF
 RUN apt-get update && apt-get install -y --no-install-recommends \
       git ca-certificates make g++ pkg-config bison flex protobuf-compiler libprotobuf-dev libnl-route-3-dev \
@@ -45,7 +46,7 @@ RUN --mount=type=secret,id=extra_ca,required=false \
  && pnpm --filter @hbe/executor deploy --legacy --prod /out
 
 # ---- runtime -------------------------------------------------------------------------
-FROM ${REGISTRY}/ubuntu:24.04
+FROM ${REGISTRY}/ubuntu:24.04@sha256:534baea6a22c03a63003dbc8dbe78fe34bc0d7e595d9a9dc9834884ff530eb55
 ENV DEBIAN_FRONTEND=noninteractive
 RUN apt-get update && apt-get install -y --no-install-recommends \
       gcc g++ libc6-dev openjdk-21-jdk-headless python3 python3-pandas \
@@ -82,7 +83,8 @@ RUN /opt/node/bin/node /opt/hbe/agent/node_modules/playwright-core/cli.js instal
 
 ENV NSJAIL_PATH=/usr/local/bin/nsjail HBE_RUN_PATH=/opt/hbe/hbe-run SECCOMP_POLICY=/opt/hbe/policy.kafel \
     WORK_ROOT=/var/lib/hbe-exec NODE_ENV=production CHROMIUM_PATH=/opt/chromium/chrome-linux/headless_shell
-HEALTHCHECK --interval=30s --timeout=5s CMD test -x /usr/local/bin/nsjail || exit 1
+# Healthy while the agent keeps reaching the API (see Agent.beat); 3 minutes covers the longest job.
+HEALTHCHECK --interval=30s --timeout=5s --start-period=120s CMD ["/opt/node/bin/node", "-e", "const f=(process.env.WORK_ROOT||'/var/lib/hbe-exec')+'/.alive';try{process.exit(Date.now()-require('fs').statSync(f).mtimeMs<180000?0:1)}catch{process.exit(1)}"]
 # Runs as root *inside the container* because creating namespaces and cgroups requires it; every
 # submission runs as uid 65534 inside an nsjail sandbox. See docs/deployment-executor.md.
 ENTRYPOINT ["/usr/bin/tini", "--", "/opt/hbe/entrypoint.sh"]

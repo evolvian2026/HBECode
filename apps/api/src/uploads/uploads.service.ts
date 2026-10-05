@@ -1,7 +1,7 @@
 import { Worker } from 'node:worker_threads';
 import { Inject, Injectable, Logger, type OnModuleDestroy, type OnModuleInit } from '@nestjs/common';
 import { questions, uploadJobs, uploadRows, type UploadActor, type UploadIssue } from '@hbe/db';
-import { profileCard, sumArray, topEarner } from '@hbe/db/seed';
+import { profileCard, sumArray, topEarner } from '@hbe/db/seed/examples';
 import { errorReport, exportFile, templateFile, type FileFormat, type ParseResult } from '@hbe/question-format';
 import { QuestionInput, type CodingQuestionInput } from '@hbe/shared';
 import { and, asc, desc, eq, inArray, lt, or, sql } from 'drizzle-orm';
@@ -329,14 +329,15 @@ export class UploadsService implements OnModuleInit, OnModuleDestroy {
     });
   }
 
-  async discard(u: AuthUser, id: string) {
-    this.actorOf(u);
+  async discard(u: AuthUser, id: string, meta: RequestMeta) {
+    const actor = this.actorOf(u);
     await this.db.run(dbCtx(u), async (tx) => {
       const [job] = await tx.select({ status: uploadJobs.status }).from(uploadJobs).where(eq(uploadJobs.id, id));
       if (!job) throw notFound('Upload');
       if (job.status === 'importing') throw conflict('The import is running.');
       await tx.update(uploadJobs).set({ status: 'discarded', file: null }).where(eq(uploadJobs.id, id));
       await tx.update(uploadRows).set({ payload: null }).where(eq(uploadRows.jobId, id));
+      await this.audit.record(tx, { tenantId: actor.tenantId, actorId: u.id, action: 'upload.discard', entityType: 'upload', entityId: id }, meta);
     });
   }
 

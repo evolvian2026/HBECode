@@ -1,10 +1,9 @@
 import { sql } from 'drizzle-orm';
 import { drizzle, type NodePgDatabase } from 'drizzle-orm/node-postgres';
 import pg from 'pg';
-import * as schema from './schema.js';
 import type { Role } from '@hbe/shared';
 
-export type Db = NodePgDatabase<typeof schema>;
+export type Db = NodePgDatabase;
 export type Tx = Parameters<Parameters<Db['transaction']>[0]>[0];
 
 /** Request context applied as transaction-local GUCs that RLS policies read. */
@@ -16,14 +15,27 @@ export interface DbContext {
 
 export const SYSTEM: DbContext = { role: 'system', tenantId: null, userId: null };
 
+/**
+ * TLS for managed Postgres. With `DATABASE_CA_CERT` (PEM; Supabase publishes its CA) the server
+ * certificate and host name are verified. Without it, a `sslmode=require|verify-full` URL is
+ * encrypted but not verified (`dbTlsVerified` tells the API to warn at startup).
+ */
+export function dbTls(connectionString: string, caCert = process.env.DATABASE_CA_CERT): { ssl: pg.PoolConfig['ssl']; verified: boolean } {
+  const ca = caCert?.replace(/\\n/g, '\n').trim();
+  if (ca) return { ssl: { ca, rejectUnauthorized: true }, verified: true };
+  if (/sslmode=(require|verify-ca|verify-full)/.test(connectionString)) return { ssl: { rejectUnauthorized: false }, verified: false };
+  return { ssl: undefined, verified: false };
+}
+
 export function createPool(connectionString: string, max = 10): pg.Pool {
+  const { ssl } = dbTls(connectionString);
   const pool = new pg.Pool({
-    connectionString,
+    // `ssl` decides; an sslmode in the URL would otherwise be re-interpreted by pg itself.
+    connectionString: ssl ? connectionString.replace(/([?&])sslmode=[^&]*&?/, '$1').replace(/[?&]$/, '') : connectionString,
     max,
     idleTimeoutMillis: 30_000,
     connectionTimeoutMillis: 5_000,
-    // Supabase / managed Postgres require TLS; local dev does not.
-    ssl: /sslmode=(require|verify-full)/.test(connectionString) ? { rejectUnauthorized: false } : undefined,
+    ssl,
   });
   pool.on('error', () => {
     /* idle client errors are retried by the pool; logged by the API's pool listener */
@@ -32,7 +44,7 @@ export function createPool(connectionString: string, max = 10): pg.Pool {
 }
 
 export function createDb(pool: pg.Pool): Db {
-  return drizzle(pool, { schema });
+  return drizzle(pool);
 }
 
 /**

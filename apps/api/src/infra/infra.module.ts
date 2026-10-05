@@ -1,5 +1,5 @@
-import { Global, Inject, Injectable, Module, type OnApplicationShutdown } from '@nestjs/common';
-import { createDb, createPool, SYSTEM, withContext, type Db, type DbContext, type Tx } from '@hbe/db';
+import { Global, Inject, Injectable, Logger, Module, type OnApplicationShutdown } from '@nestjs/common';
+import { createDb, createPool, dbTls, SYSTEM, withContext, type Db, type DbContext, type Tx } from '@hbe/db';
 import { Redis } from 'ioredis';
 import type pg from 'pg';
 import { CONFIG, loadConfig, type AppConfig } from '../config.js';
@@ -43,7 +43,11 @@ class Shutdown implements OnApplicationShutdown {
     {
       provide: PG_POOL,
       inject: [CONFIG],
-      useFactory: (cfg: AppConfig) => createPool(cfg.DATABASE_URL, cfg.DATABASE_POOL_SIZE),
+      useFactory: (cfg: AppConfig) => {
+        const tls = dbTls(cfg.DATABASE_URL);
+        if (tls.ssl && !tls.verified) new Logger('Database').warn('TLS to Postgres is encrypted but the server certificate is not verified: set DATABASE_CA_CERT (docs/deployment.md)');
+        return createPool(cfg.DATABASE_URL, cfg.DATABASE_POOL_SIZE);
+      },
     },
     {
       provide: REDIS,

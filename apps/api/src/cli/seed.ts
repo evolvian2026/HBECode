@@ -3,6 +3,8 @@
  *   SEED_ADMIN_EMAIL / SEED_ADMIN_PASSWORD   super admin (required)
  *   SEED_DEMO_PASSWORD                       if set, also creates "Demo University" with a
  *                                            client admin, teacher, associate and student
+ *   SEED_LOAD_STUDENTS=N                     with SEED_DEMO_PASSWORD: also N students
+ *                                            load1@demo.edu … loadN@demo.edu for the k6 load test
  * The seed bank (17 stacks × 10 questions) is inserted into the global bank as drafts and queued
  * for validation with publish-on-success, so nothing is published until the real sandbox has run
  * every reference solution on every test. Idempotent: users and published questions are left
@@ -59,6 +61,18 @@ if (process.env.SEED_DEMO_PASSWORD) {
   ] as const) {
     const id = await ensureUser(email, name, p);
     await db.system((tx) => tx.insert(memberships).values({ userId: id, tenantId, role }).onConflictDoNothing());
+  }
+  const load = Math.min(2000, Math.max(0, Number(process.env.SEED_LOAD_STUDENTS ?? 0) || 0));
+  if (load > 0) {
+    // One hash for all of them: hashing is deliberately slow, and these accounts share a password.
+    const passwordHash = await pw.hash(p);
+    await db.system(async (tx) => {
+      for (let i = 1; i <= load; i++) {
+        const [u] = await tx.insert(users).values({ email: `load${i}@demo.edu`, name: `Load student ${i}`, passwordHash, status: 'active' }).onConflictDoNothing().returning({ id: users.id });
+        if (u) await tx.insert(memberships).values({ userId: u.id, tenantId, role: 'student' }).onConflictDoNothing();
+      }
+    });
+    console.log(`load-test students: load1@demo.edu … load${load}@demo.edu`);
   }
 }
 

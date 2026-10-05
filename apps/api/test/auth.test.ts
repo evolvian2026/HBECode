@@ -85,6 +85,8 @@ describe('refresh tokens', () => {
     const c = new Client(t);
     await c.login(org.users.associateA.email, PASSWORD);
     const access = c.cookies.get('hb_at')!;
+    // Use the token first, so its verification is cached: revocation must still win.
+    expect((await c.get('/api/v1/auth/me')).statusCode).toBe(200);
     expect((await c.post('/api/v1/auth/logout')).statusCode).toBe(204);
     const stale = new Client(t);
     stale.cookies.set('hb_at', access);

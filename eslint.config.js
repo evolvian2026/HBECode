@@ -24,4 +24,9 @@ export default tseslint.config(
     rules: { 'react-hooks/rules-of-hooks': 'error', 'react-hooks/exhaustive-deps': 'warn' },
     languageOptions: { globals: { window: 'readonly', document: 'readonly', location: 'readonly', localStorage: 'readonly', history: 'readonly', EventSource: 'readonly', MessageEvent: 'readonly', confirm: 'readonly' } },
   },
+  {
+    // k6 scripts run in k6's JavaScript runtime, not Node.
+    files: ['loadtest/**/*.js'],
+    languageOptions: { globals: { __ENV: 'readonly', __VU: 'readonly', __ITER: 'readonly' } },
+  },
 );

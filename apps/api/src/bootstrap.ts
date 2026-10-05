@@ -12,12 +12,20 @@ import { ProblemFilter } from './common/problem.filter.js';
 import { loadConfig } from './config.js';
 
 const UNSAFE = new Set(['POST', 'PUT', 'PATCH', 'DELETE']);
+/**
+ * JSON bodies are capped at 2 MB (a 1.1 MB web submission is the largest normal request). Only
+ * question create/update (stress tests) and executor results (up to 1 MB of output per test) take
+ * more. A small default matters on a 512 MB instance: bodies are parsed before auth guards run.
+ */
+const DEFAULT_BODY_LIMIT = 2 * 1024 * 1024;
+const LARGE_BODY_LIMIT = 32 * 1024 * 1024;
+const LARGE_BODY_ROUTES = [/^\/api\/v1\/questions$/, /^\/api\/v1\/questions\/:id$/, /^\/api\/v1\/internal\/executor\/jobs\/:id\/result$/];
 
 export async function createApp(): Promise<NestFastifyApplication> {
   const cfg = loadConfig();
   const adapter = new FastifyAdapter({
     trustProxy: cfg.TRUST_PROXY,
-    bodyLimit: 32 * 1024 * 1024, // question uploads with stress tests; zod caps each field
+    bodyLimit: DEFAULT_BODY_LIMIT,
     logger: {
       level: cfg.LOG_LEVEL,
       redact: { paths: ['req.headers.cookie', 'req.headers.authorization', 'req.headers["x-csrf-token"]', 'res.headers["set-cookie"]'], remove: true },
@@ -27,6 +35,10 @@ export async function createApp(): Promise<NestFastifyApplication> {
   });
   const app = await NestFactory.create<NestFastifyApplication>(AppModule, adapter, { logger: cfg.LOG_LEVEL === 'silent' ? false : ['error', 'warn', 'log'] });
   const fastify = app.getHttpAdapter().getInstance();
+  // Registered before Nest adds its routes (that happens in app.init()/listen()).
+  fastify.addHook('onRoute', (route) => {
+    if (LARGE_BODY_ROUTES.some((r) => r.test(route.url))) route.bodyLimit = LARGE_BODY_LIMIT;
+  });
 
   await app.register(fastifyCookie);
   // Bulk question uploads arrive as the raw file body (no multipart parsing of untrusted input).
@@ -42,6 +54,7 @@ export async function createApp(): Promise<NestFastifyApplication> {
     credentials: true,
     methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE'],
     allowedHeaders: ['content-type', 'x-csrf-token', ATTEMPT_TOKEN_HEADER],
+    exposedHeaders: ['retry-after'],
     maxAge: 600,
   });
 
@@ -51,7 +64,16 @@ export async function createApp(): Promise<NestFastifyApplication> {
    * bearer tokens and no cookies, so they are exempt.
    */
   fastify.addHook('onRequest', async (req, reply) => {
-    if (!UNSAFE.has(req.method) || req.url.startsWith('/api/v1/internal/')) return;
+    if (req.url.startsWith('/api/v1/internal/')) {
+      // Executor endpoints: check the bearer token before any body is read (the guard checks it again).
+      const auth = req.headers.authorization;
+      const token = typeof auth === 'string' && auth.startsWith('Bearer ') ? auth.slice(7) : '';
+      if (token.length < 32 || !cfg.executorTokens.some((t) => safeEqual(t, token))) {
+        return reply.code(401).header('content-type', 'application/problem+json').send({ type: 'about:blank', title: 'Unauthorized', status: 401 });
+      }
+      return;
+    }
+    if (!UNSAFE.has(req.method)) return;
     const origin = req.headers.origin;
     if (origin && !cfg.webOrigins.includes(origin)) {
       return reply.code(403).header('content-type', 'application/problem+json').send({ type: 'about:blank', title: 'Forbidden', status: 403, detail: 'origin not allowed' });

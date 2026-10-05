@@ -1,3 +1,5 @@
+import { writeFile } from 'node:fs/promises';
+import { join } from 'node:path';
 import { ExecJob, jobCapability, type Capability, type ExecResult } from '@hbe/shared';
 import type { ExecutorConfig } from './config.js';
 import { runJob } from './runner.js';
@@ -33,6 +35,14 @@ export class Agent {
   async stop(): Promise<void> {
     this.stopping = true;
     while (this.active > 0) await sleep(100);
+  }
+
+  /**
+   * Heartbeat for the container healthcheck: touched after every answered claim and finished job,
+   * so a wedged agent (or one that cannot reach the API) turns unhealthy within minutes.
+   */
+  private beat(): void {
+    void writeFile(join(this.cfg.workRoot, '.alive'), String(Date.now())).catch(() => undefined);
   }
 
   private headers() {
@@ -76,6 +86,7 @@ export class Agent {
       try {
         job = await this.claim();
         backoff = 500;
+        this.beat();
       } catch (e) {
         this.log('claim error', { slot: i, error: (e as Error).message });
         await sleep(backoff);
@@ -88,6 +99,7 @@ export class Agent {
       try {
         const result = await runJob(this.cfg, job);
         await this.report(result);
+        this.beat();
         this.log('job done', {
           jobId: job.jobId,
           capability: jobCapability(job),

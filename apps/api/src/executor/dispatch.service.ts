@@ -134,7 +134,17 @@ export class DispatchService implements OnModuleInit, OnModuleDestroy {
       const capability = (type === 'web' ? `web:${s.runtime}` : type === 'db' ? `db:${s.runtime}` : s.runtime) as Capability;
       if (!capabilities.includes(capability)) return 'unsupported' as const;
 
-      const all = await tx.select().from(testCases).where(eq(testCases.versionId, s.versionId)).orderBy(asc(testCases.visibility), asc(testCases.ordinal));
+      // Load only what the job needs: stress tests can be hundreds of KB, and on a small API
+      // instance parsing them for every Run showed up in the load test. A Run uses the samples
+      // (none at all with custom input); Submit and validation use everything.
+      const customRun = type === 'coding' && s.kind === 'run' && s.customInput !== null;
+      const all = customRun
+        ? []
+        : await tx
+            .select()
+            .from(testCases)
+            .where(s.kind === 'run' ? and(eq(testCases.versionId, s.versionId), eq(testCases.visibility, 'sample')) : eq(testCases.versionId, s.versionId))
+            .orderBy(asc(testCases.visibility), asc(testCases.ordinal));
       const samples = all.filter((t) => t.visibility === 'sample');
       const hidden = all.filter((t) => t.visibility === 'hidden');
       // Samples first, then hidden tests ('hidden' sorts before 'sample', so order explicitly).
@@ -189,7 +199,11 @@ export class DispatchService implements OnModuleInit, OnModuleDestroy {
     const outcome = await this.db.system(async (tx) => {
       const [s] = await tx.select().from(submissions).where(eq(submissions.id, result.jobId)).for('update');
       if (!s || s.status !== 'running' || s.executorId !== executorId) return null;
-      const tests = s.kind === 'run' && s.customInput !== null ? [] : await tx.select().from(testCases).where(eq(testCases.versionId, s.versionId));
+      // Grading needs visibility and weight only, not the (possibly large) inputs and outputs.
+      const tests =
+        s.kind === 'run' && s.customInput !== null
+          ? []
+          : await tx.select({ id: testCases.id, visibility: testCases.visibility, weight: testCases.weight }).from(testCases).where(eq(testCases.versionId, s.versionId));
       const byId = new Map(tests.map((t) => [t.id, t]));
       let verdict: Verdict;
       let passed = 0;

@@ -58,6 +58,13 @@ const NO_REFRESH = ['/api/v1/auth/login', '/api/v1/auth/refresh', '/api/v1/auth/
 export async function api<T = unknown>(method: string, path: string, body?: unknown, headers: Record<string, string> = {}): Promise<T> {
   let res = await raw(method, path, body, headers);
   if (res.status === 401 && !NO_REFRESH.includes(path) && (await refresh())) res = await raw(method, path, body, headers);
+  // Server busy (503 + Retry-After): retry idempotent requests once. POSTs are not retried, so a
+  // submission or a batch of proctoring events can never be sent twice.
+  if (res.status === 503 && (method === 'GET' || method === 'PUT')) {
+    const wait = Math.min(5, Number(res.headers.get('retry-after')) || 2);
+    await new Promise((r) => setTimeout(r, wait * 1000));
+    res = await raw(method, path, body, headers);
+  }
   if (res.status === 204) return undefined as T;
   const data = (await res.json().catch(() => ({}))) as Record<string, unknown>;
   if (!res.ok) {

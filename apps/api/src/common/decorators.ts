@@ -7,11 +7,14 @@ export const PERMISSION = 'hbe:permission';
 export const ROLES_META = 'hbe:roles';
 export const ALLOW_MFA_SETUP = 'hbe:allow-mfa-setup';
 export const INTERNAL = 'hbe:internal';
+export const AUTHENTICATED = 'hbe:authenticated';
 
 /** No session required (login, health). CSRF/Origin checks still apply to unsafe methods. */
 export const Public = () => SetMetadata(PUBLIC, true);
 /** Executor endpoints: bearer token, no cookies, no CSRF. */
 export const Internal = () => SetMetadata(INTERNAL, true);
+/** Any signed-in user, guests included; the handler scopes data to that user (and RLS enforces it). */
+export const Authenticated = () => SetMetadata(AUTHENTICATED, true);
 export const RequirePermission = (p: Permission) => SetMetadata(PERMISSION, p);
 export const RequireRoles = (...roles: Role[]) => SetMetadata(ROLES_META, roles);
 /** Reachable while an admin still has to enrol MFA. */

@@ -66,8 +66,8 @@ export class UploadsController {
   @RequirePermission('question:write')
   @Delete(':id')
   @HttpCode(204)
-  async discard(@CurrentUser() u: AuthUser, @Param('id', ParseUUIDPipe) id: string) {
-    await this.uploads.discard(u, id);
+  async discard(@CurrentUser() u: AuthUser, @Param('id', ParseUUIDPipe) id: string, @Meta() meta: RequestMeta) {
+    await this.uploads.discard(u, id, meta);
   }
 }
 
