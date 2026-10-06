@@ -1,3 +1,4 @@
+import { existsSync } from 'node:fs';
 import { chmod, mkdir, writeFile } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
 import { chromium, type Browser } from 'playwright-core';
@@ -23,7 +24,8 @@ export async function writeChromeWrapper(cfg: ExecutorConfig): Promise<string> {
     '--cgroup_mem_max', String(1024 * 1024 * 1024), '--cgroup_pids_max', '256', '--cgroup_cpu_ms_per_sec', '2000',
     '--iface_no_lo', '--seccomp_policy', cfg.seccompPolicy,
     ...(cfg.cgroupV2 ? ['--use_cgroupv2', '--cgroupv2_mount', cfg.cgroupRoot, '--cgroup_mem_swap_max', '0'] : []),
-    ...BASE_MOUNTS.flatMap((m) => ['-R', m]),
+    // Only paths that exist: nsjail fails on a missing bind source (arm64 Ubuntu has no /lib64).
+    ...BASE_MOUNTS.filter((m) => existsSync(m)).flatMap((m) => ['-R', m]),
     '-R', chromeDir,
     '-m', `none:/tmp:tmpfs:size=${256 * 1024 * 1024}`, '-m', `none:/dev/shm:tmpfs:size=${128 * 1024 * 1024}`,
     '--env', 'HOME=/tmp', '--env', 'LANG=C.UTF-8',

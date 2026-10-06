@@ -796,7 +796,7 @@ flowchart TB
 
 | Change | Reason |
 |---|---|
-| **API and web images are distroless** (`gcr.io/distroless/nodejs22-debian12:nonroot`): no shell, no package manager, uid 65532, application files owned by root; every base image is **pinned by digest** and refreshed with `scripts/refresh-image-digests.sh`. | Smaller attack surface (API image 413 → 291 MB, web 362 → 240 MB) and reproducible builds; the running process cannot modify its own code. |
+| **API and web images are distroless** (`gcr.io/distroless/nodejs22-debian13:nonroot`): no shell, no package manager, uid 65532, application files owned by root; every base image is **pinned by digest** and refreshed with `scripts/refresh-image-digests.sh`. | Smaller attack surface (API image 413 → 291 MB, web 362 → 240 MB) and reproducible builds; the running process cannot modify its own code. |
 | **Read-only root filesystems** everywhere, including the executor (job directories on a 2 GB tmpfs mounted `exec`). The test harness uses the production flags. | The sandbox suite (83 tests) passes unchanged, so there is no reason to leave the image writable. |
 | **Executor healthcheck = heartbeat file** touched after every answered claim or finished job (unhealthy after 3 minutes without one). | The old check (`test -x nsjail`) stayed green while an agent could not reach the API. |
 | **JSON bodies capped at 2 MB** by default (32 MB only for question authoring and executor results); executor routes check their bearer token before the body is read. | Bodies are parsed before Nest guards run; 32 MB everywhere let anonymous clients make a 512 MB instance parse large payloads. |

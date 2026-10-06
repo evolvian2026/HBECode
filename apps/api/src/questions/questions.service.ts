@@ -224,9 +224,12 @@ export class QuestionsService {
   async detail(u: AuthUser, id: string) {
     const canWrite = hasPermission(u.role, 'question:write');
     return this.db.run(dbCtx(u), async (tx) => {
-      const [row] = await tx.select().from(questions).where(eq(questions.id, id));
-      if (!row) throw notFound('Question');
-      const [v] = await tx.select().from(questionVersions).where(eq(questionVersions.id, row.latestVersionId!));
+      // One statement, one snapshot: read separately, a validation finishing in between could
+      // pair the old status with the new report.
+      const [hit] = await tx.select({ row: questions, v: questionVersions }).from(questions)
+        .innerJoin(questionVersions, eq(questionVersions.id, questions.latestVersionId)).where(eq(questions.id, id));
+      if (!hit) throw notFound('Question');
+      const { row, v } = hit;
       const tests = await tx.select().from(testCases).where(eq(testCases.versionId, v!.id)).orderBy(asc(testCases.visibility), asc(testCases.ordinal));
       const stubs = await tx.select().from(languageStubs).where(eq(languageStubs.versionId, v!.id));
       const secrets = canWrite ? await tx.select().from(languageSecrets).where(eq(languageSecrets.versionId, v!.id)) : [];
@@ -386,7 +389,6 @@ export class QuestionsService {
 
   /** Called by the dispatcher (system context) when a validation submission finishes. */
   async onValidationResult(submissionId: string, result: ExecResult): Promise<void> {
-    let publish: { questionId: string; actorId: string } | null = null;
     await this.db.system(async (tx) => {
       const [s] = await tx.select().from(submissions).where(eq(submissions.id, submissionId));
       if (!s?.validationRun) return;
@@ -445,11 +447,12 @@ export class QuestionsService {
         report.ok = report.problems.length === 0;
         report.checkedAt = new Date().toISOString();
         if (!q.publishedVersionId) await tx.update(questions).set({ status: report.ok ? 'draft' : 'invalid' }).where(eq(questions.id, q.id));
-        if (report.ok && report.publishIfValid) publish = { questionId: q.id, actorId: s.userId };
       }
       await tx.update(questionVersions).set({ validation: report }).where(eq(questionVersions.id, v.id));
+      // Publish in the same transaction, so no reader ever sees a finished, passing report on a
+      // question that publishIfValid has not published yet.
+      if (done && report.ok && report.publishIfValid && !v.publishedAt) await this.publishIn(tx, q.id, s.userId);
     });
-    if (publish) await this.publishSystem((publish as { questionId: string }).questionId, (publish as { actorId: string }).actorId);
   }
 
   /**
@@ -500,11 +503,9 @@ export class QuestionsService {
     });
   }
 
-  private async publishSystem(id: string, actorId: string) {
-    await this.db.system(async (tx) => {
-      const r = await this.doPublish(tx, id);
-      await this.audit.record(tx, { tenantId: r.tenantId, actorId, action: 'question.publish', entityType: 'question', entityId: id, data: { versionId: r.versionId, auto: true } });
-    });
+  private async publishIn(tx: Tx, id: string, actorId: string) {
+    const r = await this.doPublish(tx, id);
+    await this.audit.record(tx, { tenantId: r.tenantId, actorId, action: 'question.publish', entityType: 'question', entityId: id, data: { versionId: r.versionId, auto: true } });
   }
 
   /** Used by the dispatcher (system context) to resolve versions for a set of ids. */

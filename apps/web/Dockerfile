@@ -3,7 +3,7 @@
 # docker build -f apps/web/Dockerfile --build-arg NEXT_PUBLIC_API_URL=http://localhost:4000 -t hbe-web .
 ARG REGISTRY=mirror.gcr.io/library
 # Base images are pinned by digest (multi-arch index digests); refresh with scripts/refresh-image-digests.sh.
-ARG DISTROLESS=gcr.io/distroless/nodejs22-debian12:nonroot@sha256:13593b7570658e8477de39e2f4a1dd25db2f836d68a0ba771251572d23bb4f8e
+ARG DISTROLESS=gcr.io/distroless/nodejs22-debian13:nonroot@sha256:ec2313763dd43931543bd03830466e0c409ce73a487e8d46f10db72d3b816c1c
 
 FROM ${REGISTRY}/node:22-bookworm-slim@sha256:43ac6c60b8f89723f746e8a92ce91abd5017e627ce1ddfe4238355d3a30b772c AS build
 ARG NEXT_PUBLIC_API_URL=http://localhost:4000

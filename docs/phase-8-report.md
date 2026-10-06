@@ -96,6 +96,11 @@ All raw results (k6 summaries, per-request failures, `docker stats` samples) are
 7. **The first restore of a backup failed:** `ALTER SCHEMA hbe OWNER TO hbe_owner` — `pg_dump --no-owner` is ignored for custom-format archives, so ownership has to be dropped at `pg_restore` time. Found by running the workflow's commands locally before relying on them. The workflow and runbook now restore with `--no-owner`, tolerate grants to Supabase-only roles, and check what matters instead: row counts, every table still forcing RLS, `hbe_app` privileges.
 8. **A full disk stopped one run** (MySQL runner never became ready): repeated executor builds had accumulated ~23 GB of build cache. Pruning entries unused for 20 hours freed 4.2 GB. Not a product issue, but the executor install script now caps Docker logs and prunes old images on every update.
 
+9. **CI on the first full push found three more problems** (all fixed in a follow-up commit, each verified locally before pushing):
+   - **A race in auto-publish (a real bug, failed 2 of 3 CI runs).** When the last validation run of a question finished, the passing report and the publish were written in two transactions, so for a moment the question showed "validated, nothing pending" while still unpublished; the detail endpoint also read the question and its version in two statements, so it could pair the old status with the new report. CI saw `React Shopping Cart: validating` after a clean report. The publish now happens in the same transaction as the report, and the detail endpoint reads both rows in one joined statement. The e2e file that caught it then passed 3 of 3 runs locally (13/13 for the whole e2e suite).
+   - **New OpenSSL CVEs in the distroless base** (1 critical, 5 high, in `libssl3` 3.0.18): Trivy failed the API image. Upstream had not rebuilt `nodejs22-debian12`, so re-pinning could not help; API and web now use `gcr.io/distroless/nodejs22-debian13:nonroot` (pinned by digest). Locally: Trivy 0 fixable HIGH/CRITICAL on both images, Argon2 loads and verifies, the images still run as uid 65532 with no shell, a k6 smoke run (3 students, Run + Submit) had 0 % errors and 100 % AC, and the web image serves.
+   - **Chromium never started on ARM64** (8 web-grader tests failed; the other 75 sandbox tests passed). The Chromium jail bound `/lib64` unconditionally; Ubuntu 24.04 on arm64 has no `/lib64` (checked in the arm64 image's filesystem), so nsjail failed before Chromium launched. Other jails already skipped missing paths; the Chromium wrapper now does the same, with a unit test. x86 web sandbox tests pass (9/9); the arm64 result comes from CI.
+
 ## Test results (final runs)
 
 | Suite | Tests | What it proves |
@@ -105,7 +110,7 @@ All raw results (k6 summaries, per-request failures, `docker stats` samples) are
 | `apps/api` e2e with the real executor | 13 | Grading in 8 languages, web and DB graders, graded attempts — with the hardened, read-only executor |
 | Executor sandbox suite | 83 | Escape corpus, 8 languages, web grader, DB runners — **with a read-only root filesystem** (same flags as production) |
 | `apps/web` Playwright on a fresh stack | 19 | Every browser flow from Phases 2–6 against the distroless, read-only API and web images |
-| Other suites | 24 + 17 + 10 | shared, question-format, executor unit tests |
+| Other suites | 24 + 17 + 11 | shared, question-format, executor unit tests (**1 new**: Chromium jail binds only existing paths) |
 | Backup dump → restore (local run of the workflow's commands) | 1 | 43 MB dump of the load-test database restored with matching counts (86 users, 3,032 submissions, 170 questions, 7 migrations), 35/35 tables forcing RLS, `hbe_app` privileges back; 22 s |
 | `terraform validate` | 2 configs | `oci-executor` and `aws/envs/prod` (providers from releases.hashicorp.com; the registry is blocked here) |
 
@@ -119,7 +124,7 @@ Lint and typecheck are clean; `pnpm audit --prod` reports no known vulnerabiliti
 4. The executor image's Trivy scan stays report-only: 8 toolchains bring many unfixed findings in compilers and runtimes, and the running code is sandboxed by nsjail regardless. API and web images fail CI on fixable HIGH/CRITICAL.
 5. **Terraform is validated, not applied.** Expect small fixes on a first apply (quotas, engine versions per region). AWS costs were not priced against a real bill.
 6. **Backups are dormant** until you create the age key, the repository variable and the secret (runbooks). The dump/restore commands were exercised locally against the dev database (see test results), not against Supabase.
-7. The ARM64 sandbox suite and the multi-arch image publish run in CI for the first time with this push; their results are reported separately below once CI finishes.
+7. **ARM64:** the multi-arch image publish (amd64 + arm64, built natively) succeeded on the first push. The ARM64 sandbox suite then found the `/lib64` problem above (75/83 passing before the fix); its result after the fix is whatever the CI run on the follow-up commit shows, and the hand-over message reports it.
 
 ## Sign-ins needed
 
