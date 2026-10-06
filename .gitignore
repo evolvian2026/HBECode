@@ -23,3 +23,4 @@ loadtest/.env.loadtest
 *.tfstate.*
 *.tfvars
 !*.tfvars.example
+loadtest/results/summary.json
