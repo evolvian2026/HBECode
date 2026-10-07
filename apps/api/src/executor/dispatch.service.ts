@@ -305,9 +305,12 @@ export class DispatchService implements OnModuleInit, OnModuleDestroy {
           .where(inArray(submissions.id, again.map((a) => a.id)));
       }
       await tx.delete(users).where(and(eq(users.kind, 'guest'), lt(users.createdAt, new Date(now.getTime() - 86_400_000))));
-      return { again, dead };
+      return { again, retry, stuck, dead };
     });
-    for (const a of r.again) await this.redis.rpush(this.key(a.priority), a.id);
+    for (const a of r.retry) await this.redis.rpush(this.key(a.priority), a.id);
+    // A queued id usually still sits in its list (no executor online yet): pushing it again every
+    // sweep would grow the list without bound, so only ids that were really lost are pushed.
+    for (const a of r.stuck) if ((await this.redis.lpos(this.key(a.priority), a.id)) === null) await this.redis.rpush(this.key(a.priority), a.id);
     for (const d of r.dead) await this.notify(d.id, 'done');
     for (const d of r.dead) await this.reportHandler?.(d.id).catch(() => undefined);
     for (const d of r.dead) if (d.attemptId) await this.attemptHandler?.(d.attemptId).catch(() => undefined);

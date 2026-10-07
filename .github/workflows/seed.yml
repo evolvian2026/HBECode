@@ -1,0 +1,45 @@
+# Create the super admin (and optionally load the question bank) on the production database, for
+# hosts without a shell (Render free). Safe to re-run: existing users and published questions are
+# left alone.
+# Requires repository secrets:
+#   DATABASE_URL         the app's connection string (role hbe_app, transaction pooler), as on Render
+#   SEED_ADMIN_EMAIL     super admin e-mail
+#   SEED_ADMIN_PASSWORD  super admin password (12+ characters)
+# Optional: DATABASE_CA_CERT (verifies the database certificate).
+# Validation jobs for the bank are queued in this job's own throwaway Redis; the live API's
+# sweeper finds them in the database within a minute and queues them for the executor.
+name: Seed production
+on:
+  workflow_dispatch:
+    inputs:
+      bank:
+        description: 'Also load the 170-question bank (needs an executor online to validate it)'
+        type: boolean
+        default: false
+permissions:
+  contents: read
+jobs:
+  seed:
+    runs-on: ubuntu-24.04
+    environment: production
+    services:
+      redis:
+        image: redis:7-alpine
+        ports: ['6379:6379']
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: 22, cache: pnpm }
+      - run: pnpm install --frozen-lockfile --filter "@hbe/api..."
+      - run: pnpm --filter "@hbe/api..." build
+      - run: node apps/api/dist/cli/seed.js
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          DATABASE_CA_CERT: ${{ secrets.DATABASE_CA_CERT }}
+          DATABASE_POOL_SIZE: '2'
+          REDIS_URL: redis://127.0.0.1:6379
+          SWEEPER_INTERVAL_MS: '0'
+          SEED_ADMIN_EMAIL: ${{ secrets.SEED_ADMIN_EMAIL }}
+          SEED_ADMIN_PASSWORD: ${{ secrets.SEED_ADMIN_PASSWORD }}
+          SEED_BANK: ${{ inputs.bank && '1' || '0' }}

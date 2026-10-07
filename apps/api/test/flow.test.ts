@@ -3,6 +3,7 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { sumArray } from '../../../packages/db/src/seed/questions/sum-array.js';
 import { PASSWORD, seedOrg, systemQuery, type Org } from './fixtures.js';
 import { Client, executor, startApp, type TestApp } from './harness.js';
+import type { Redis } from 'ioredis';
 
 let t: TestApp;
 let org: Org;
@@ -84,6 +85,38 @@ describe('authoring → validation → publish', () => {
     const d = (await teacher.get(`/api/v1/questions/${questionId}`)).json();
     expect(d.validation.ok).toBe(true);
     expect(d.status).toBe('published');
+  });
+});
+
+describe('dispatch sweeper', () => {
+  it('re-queues a lost job once, and never duplicates one still waiting in the queue', async () => {
+    // The app under test is built from dist, so its injection tokens come from there too.
+    const { DispatchService } = await import('../dist/executor/dispatch.service.js');
+    const { REDIS_RAW } = await import('../dist/infra/infra.module.js');
+    const redis = t.app.get<Redis>(REDIS_RAW, { strict: false });
+    const dispatch = t.app.get(DispatchService, { strict: false });
+    const run = (await student.post('/api/v1/submissions', { questionId, runtime: 'python', code: 'def sum_array(a):\n    return 0\n', kind: 'run' })).json();
+    const list = `${process.env.REDIS_PREFIX}exec:run`;
+    const copies = async () => (await redis.lrange(list, 0, -1)).filter((x) => x === run.id).length;
+    expect(await copies()).toBe(1);
+    // No executor has claimed it for a while: the sweeper must not push it again and again.
+    // Each sweep holds a 5 s lock (one API replica sweeps at a time); release it between sweeps.
+    const sweep = async () => {
+      await redis.del(`${process.env.REDIS_PREFIX}sweeper-lock`);
+      return dispatch.sweep();
+    };
+    const age = () => systemQuery(t, `UPDATE hbe.submissions SET created_at = now() - interval '5 minutes', lease_until = NULL WHERE id = $1`, [run.id]);
+    await age();
+    expect((await sweep()).requeued).toBe(1);
+    await age();
+    expect((await sweep()).requeued).toBe(1);
+    expect(await copies()).toBe(1);
+    // The id was lost from Redis (restart, eviction): the sweeper pushes it back, once.
+    await redis.lrem(list, 0, run.id);
+    await age();
+    await sweep();
+    expect(await copies()).toBe(1);
+    expect((await runFakeExecutor()).jobId).toBe(run.id); // drain, so later tests claim their own jobs
   });
 });
 

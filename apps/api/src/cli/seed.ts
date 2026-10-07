@@ -5,6 +5,8 @@
  *                                            client admin, teacher, associate and student
  *   SEED_LOAD_STUDENTS=N                     with SEED_DEMO_PASSWORD: also N students
  *                                            load1@demo.edu … loadN@demo.edu for the k6 load test
+ *   SEED_BANK=0                              accounts only; skip the question bank (e.g. before an
+ *                                            executor is online; run again without it later)
  * The seed bank (17 stacks × 10 questions) is inserted into the global bank as drafts and queued
  * for validation with publish-on-success, so nothing is published until the real sandbox has run
  * every reference solution on every test. Idempotent: users and published questions are left
@@ -79,7 +81,9 @@ if (process.env.SEED_DEMO_PASSWORD) {
 const admin: AuthUser = { id: adminId, role: 'super_admin', tenantId: null, sessionId: 'seed', mfa: true, mfaSetupRequired: false };
 const meta = { ip: '127.0.0.1', userAgent: 'seed', requestId: 'seed' };
 let queued = 0;
-for (const { question: q } of BANK_QUESTIONS) {
+const bank = process.env.SEED_BANK === '0' ? [] : BANK_QUESTIONS;
+if (!bank.length) console.log('SEED_BANK=0: question bank skipped');
+for (const { question: q } of bank) {
   const existing = await db.system(async (tx) => {
     const rows = await tx
       .select({ id: questions.id, status: questions.status })
@@ -102,5 +106,5 @@ for (const { question: q } of BANK_QUESTIONS) {
   if (v.problems.length) console.log(`"${q.title}": ${v.status} (${v.problems.join('; ')})`);
   else queued++;
 }
-console.log(`${BANK_QUESTIONS.length} seed questions: ${queued} queued for validation (they publish automatically once an executor validates them); the rest were already published`);
+if (bank.length) console.log(`${BANK_QUESTIONS.length} seed questions: ${queued} queued for validation (they publish automatically once an executor validates them); the rest were already published`);
 await app.close();
