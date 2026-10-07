@@ -104,6 +104,23 @@ Keep them in a password manager. Never commit them. `.env*` files are git-ignore
 > `docker run --rm --entrypoint /opt/node/bin/node hbe-executor /opt/hbe/agent/dist/cli-versions.js` (all 8 runtimes plus `web:html`, `web:react`, `db:pandas` listed; the `db:*` runners show as "not set" in this one-off container), then `pnpm install && pnpm --filter @hbe/executor test:sandbox`.
 > ARM64 has also not been checked for the Phase 3 pieces: Playwright's headless Chromium build, and the `mysql:8.4` and `mongo:8.0` images (both publish arm64 builds; MongoDB 8 needs ARMv8.2-A, which Ampere A1 has).
 
+### 4b. Alternative: AWS EC2 (when Oracle has no free Arm capacity)
+
+The executor needs only an Ubuntu 24.04 machine with Docker that can reach the API over HTTPS; the
+same install script works on EC2.
+
+1. EC2 → Launch instance, in **Mumbai (ap-south-1)**: Ubuntu Server 24.04 LTS **64-bit (Arm)**,
+   **t4g.medium** (2 vCPU, 4 GB; or c7g.large for steady CPU during exams), a new key pair,
+   **60–100 GB gp3**, and a security group with **only SSH (22) from your IP** inbound (outbound: all).
+   Nothing else may run on this machine: it executes untrusted code.
+2. Connect (EC2 Instance Connect in the console, or `ssh -i key.pem ubuntu@<ip>`), write
+   `/etc/hbe/executor.env` (`HBE_API_URL=https://api.<domain>`, `HBE_EXECUTOR_TOKEN=…`, mode 600), then:
+   ```bash
+   curl -fsSLO https://raw.githubusercontent.com/<owner>/HBECode/<ref>/deploy/oci/install-executor.sh
+   sudo HBE_REF=<ref> HBE_EXECUTOR_ID=aws-mum-1 bash install-executor.sh
+   ```
+3. Add a billing budget alert. Stop the instance between exams if you want to save money; it reconnects when started (the containers restart automatically).
+
 ## 5. Smoke test
 
 1. Sign in as the super admin and create an institution (Institutions page).

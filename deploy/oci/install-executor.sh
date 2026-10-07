@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Install or update the HBECode executor on a fresh Ubuntu 24.04 VM (Oracle A1, ARM64 or x86).
+# Install or update the HBECode executor on a fresh Ubuntu 24.04 VM (Oracle A1, AWS EC2; ARM64 or x86).
 # Idempotent: re-run it to update to a new git ref. Used by infra/terraform/oci-executor (cloud-init)
 # and by hand (docs/deployment.md step 4):
 #
@@ -27,8 +27,14 @@ log() { echo "[hbe-install] $*"; }
 if ! command -v docker >/dev/null; then
   log "installing docker"
   apt-get update -q
-  DEBIAN_FRONTEND=noninteractive apt-get install -y -q docker.io git unattended-upgrades
+  DEBIAN_FRONTEND=noninteractive apt-get install -y -q docker.io docker-buildx git unattended-upgrades
   systemctl enable --now docker
+fi
+# The executor image needs BuildKit (RUN --mount); Ubuntu's docker.io ships without the buildx plugin.
+if ! docker buildx version >/dev/null 2>&1; then
+  log "installing docker-buildx"
+  apt-get update -q
+  DEBIAN_FRONTEND=noninteractive apt-get install -y -q docker-buildx
 fi
 # Docker's own logs are capped so a chatty container cannot fill the boot volume.
 if [ ! -f /etc/docker/daemon.json ]; then
