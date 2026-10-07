@@ -3,6 +3,7 @@ import { readdir, readFile } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import pg from 'pg';
+import { pgConnection } from './client.js';
 
 const MIGRATIONS_DIR = join(dirname(fileURLToPath(import.meta.url)), '..', 'migrations');
 
@@ -11,10 +12,7 @@ const MIGRATIONS_DIR = join(dirname(fileURLToPath(import.meta.url)), '..', 'migr
  * owner. Applied files are checksummed: editing an already-applied migration is an error.
  */
 export async function runMigrations(adminUrl: string, log: (m: string) => void = console.log): Promise<string[]> {
-  const client = new pg.Client({
-    connectionString: adminUrl,
-    ssl: /sslmode=(require|verify-full)/.test(adminUrl) ? { rejectUnauthorized: false } : undefined,
-  });
+  const client = new pg.Client(pgConnection(adminUrl));
   await client.connect();
   const applied: string[] = [];
   try {
@@ -56,10 +54,7 @@ export async function runMigrations(adminUrl: string, log: (m: string) => void =
 /** Give the app role a login password (kept out of migrations so no secret is in the repo). */
 export async function provisionAppRole(adminUrl: string, password: string): Promise<void> {
   if (password.length < 16) throw new Error('HBE_APP_DB_PASSWORD must be at least 16 characters');
-  const client = new pg.Client({
-    connectionString: adminUrl,
-    ssl: /sslmode=(require|verify-full)/.test(adminUrl) ? { rejectUnauthorized: false } : undefined,
-  });
+  const client = new pg.Client(pgConnection(adminUrl));
   await client.connect();
   try {
     // Identifiers cannot be bound; the role name is a constant and the password is escaped by format().

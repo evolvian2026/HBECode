@@ -27,15 +27,21 @@ export function dbTls(connectionString: string, caCert = process.env.DATABASE_CA
   return { ssl: undefined, verified: false };
 }
 
+/**
+ * Connection settings with TLS from `dbTls`. When `ssl` is set, `sslmode` is removed from the URL:
+ * pg would otherwise re-interpret it (sslmode=require as verify-full) and override `ssl`.
+ */
+export function pgConnection(connectionString: string, caCert = process.env.DATABASE_CA_CERT): { connectionString: string; ssl: pg.PoolConfig['ssl'] } {
+  const { ssl } = dbTls(connectionString, caCert);
+  return { connectionString: ssl ? connectionString.replace(/([?&])sslmode=[^&]*&?/, '$1').replace(/[?&]$/, '') : connectionString, ssl };
+}
+
 export function createPool(connectionString: string, max = 10): pg.Pool {
-  const { ssl } = dbTls(connectionString);
   const pool = new pg.Pool({
-    // `ssl` decides; an sslmode in the URL would otherwise be re-interpreted by pg itself.
-    connectionString: ssl ? connectionString.replace(/([?&])sslmode=[^&]*&?/, '$1').replace(/[?&]$/, '') : connectionString,
+    ...pgConnection(connectionString),
     max,
     idleTimeoutMillis: 30_000,
     connectionTimeoutMillis: 5_000,
-    ssl,
   });
   pool.on('error', () => {
     /* idle client errors are retried by the pool; logged by the API's pool listener */
